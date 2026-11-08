@@ -1,0 +1,15 @@
+.git
+.env*
+node_modules
+dist
+docs
+data
+.cache
+test-results
+playwright-report
+prompt*.md
+*.log
+*.sqlite*
+*.pem
+*.key
+.DS_Store

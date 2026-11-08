@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS axio_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE IF NOT EXISTS documents (
+ id TEXT PRIMARY KEY,
+ user_id TEXT NOT NULL REFERENCES user(id) ON DELETE CASCADE,
+ title TEXT NOT NULL CHECK(length(title) BETWEEN 1 AND 100),
+ data TEXT NOT NULL,
+ version INTEGER NOT NULL DEFAULT 1,
+ created_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS documents_user_modified ON documents(user_id, updated_at DESC);
+CREATE TABLE IF NOT EXISTS ai_usage (subject TEXT NOT NULL, day TEXT NOT NULL, count INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(subject,day));
+INSERT OR IGNORE INTO axio_migrations(version) VALUES(1);

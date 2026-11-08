@@ -1,0 +1,50 @@
+{
+  "name": "axio-geometry",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"tsx watch server/index.ts\"",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "start": "tsx server/index.ts",
+    "db:migrate": "tsx server/db/migrate.ts",
+    "lint": "eslint src server shared tests scripts",
+    "db:schema": "tsx server/db/schema.ts",
+    "mail:dev": "tsx scripts/dev-mail.ts"
+  },
+  "dependencies": {
+    "@fontsource/inter": "5.2.8",
+    "better-auth": "1.7.18",
+    "better-sqlite3": "13.0.3",
+    "dotenv": "17.2.3",
+    "express": "5.1.0",
+    "express-rate-limit": "8.7.3",
+    "nodemailer": "10.3.1",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "tsx": "4.20.6",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@playwright/test": "1.56.1",
+    "@types/better-sqlite3": "9.6.0",
+    "@types/express": "5.0.5",
+    "@types/node": "22.19.0",
+    "@types/nodemailer": "8.0.2",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "@types/smtp-server": "3.5.13",
+    "@vitejs/plugin-react": "5.1.0",
+    "concurrently": "9.2.5",
+    "eslint": "9.39.5",
+    "smtp-server": "3.21.3",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.72.1",
+    "vite": "7.3.7",
+    "vitest": "4.1.12"
+  }
+}
