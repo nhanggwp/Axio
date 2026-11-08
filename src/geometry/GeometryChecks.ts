@@ -54,6 +54,18 @@ export function validateGeometry(adapter: GeoGebraAdapter, checks: GeometryCheck
         const [a, b] = check.refs.map(line);
         if (Math.abs(a.a * b.a + a.b * b.b) / (Math.hypot(a.a, a.b) * Math.hypot(b.a, b.b)) > 1e-7) failures.push(`${check.refs[0]} chưa vuông góc với ${check.refs[1]}.`);
       }
+      if (check.kind === "coordinate_order") {
+        const [a, b] = check.refs.map(point);
+        if (b[check.axis] - a[check.axis] <= 1e-8) failures.push(`${check.refs[0]} phải ${check.axis === "x" ? "ở bên trái" : "ở bên dưới"} ${check.refs[1]}; thực tế ${check.axis}: ${a[check.axis]}, ${b[check.axis]}. Hãy sửa vị trí hoặc nhánh giao điểm.`);
+      }
+      if (check.kind === "distance") {
+        const [a, b] = check.refs.map(point), actual = distance(a, b);
+        if (Math.abs(actual - check.value) > 1e-7 * Math.max(1, actual, check.value)) failures.push(`${check.refs.join("")} = ${actual.toPrecision(8)}, phải bằng ${check.value}.`);
+      }
+      if (check.kind === "moveable") for (const name of check.refs) {
+        need(name, ["point"]);
+        if (!api.isMoveable(name)) failures.push(`${name} không kéo được. Cần điểm tự do hoặc point_on trên quỹ tích để làm điểm điều khiển.`);
+      }
       if (check.kind === "dependent") for (const name of check.refs) {
         need(name);
         if (api.isIndependent(name)) failures.push(`${name} đang là đối tượng tự do, chưa phụ thuộc vào phép dựng.`);

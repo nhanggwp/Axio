@@ -157,6 +157,11 @@ export class GeometryController {
   }
   private clicked = (name: string) => {
     if (this.pointer) this.pointer.hit ??= name;
+    if (this.mode === 0 && this.adapter.api.getObjectType(name) === "point" && !this.adapter.api.isMoveable(name)) {
+      const controls = this.controlPoints(name);
+      this.drawingFeedback = controls.length ? `${name} phụ thuộc phép dựng · kéo ${controls.join(" hoặc ")} để chỉnh hình.` : `${name} không di chuyển trực tiếp được. Xem quan hệ trong Thuộc tính.`;
+      this.emit();
+    }
     if (this.mode !== 0 && ![1, 6, 27, 40].includes(this.mode)) {
       this.drawingFeedback = `Đã chọn ${name} · tiếp tục theo hướng dẫn của công cụ.`;
       this.emit();
@@ -226,6 +231,17 @@ export class GeometryController {
         ? this.selectedNames.filter((n) => n !== name)
         : [...this.selectedNames, name],
     );
+  }
+  controlPoints(name: string) {
+    const found = new Set<string>(), visited = new Set<string>(), api = this.adapter.api;
+    const visit = (target: string) => {
+      if (visited.has(target) || !api.exists(target)) return;
+      visited.add(target);
+      if (api.getObjectType(target) === "point" && api.isMoveable(target) && api.getVisible(target)) { found.add(target); return; }
+      for (const input of api.getCommandString(target, false).match(/[A-Za-z][A-Za-z0-9_]*/g) ?? []) if (input !== target) visit(input);
+    };
+    visit(name);
+    return [...found].slice(0, 6);
   }
   deletionImpact(names = this.selectedNames) {
     return affectedByDeletion(this.objects, names);

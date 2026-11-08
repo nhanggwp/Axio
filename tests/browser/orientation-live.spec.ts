@@ -1,0 +1,43 @@
+import { writeFile } from "node:fs/promises";
+import { test, expect } from "../fixtures";
+import { fixedRightTriangle } from "../helpers/fixedTriangle";
+import { completedAgentReply, observeAgent } from "../helpers/agent";
+
+test("live correction uses real preview coordinates and creates a draggable triangle in the requested direction", async ({ page }) => {
+  test.skip(process.env.RUN_LIVE_AI !== "1", "Enable explicitly; uses paid DeepSeek API.");
+  test.setTimeout(360000);
+  await page.goto("/");
+  await page.waitForFunction(() => !!window.axio, undefined, { timeout: 60000 });
+  await expect(page.locator(".session-loading")).toBeHidden();
+  await page.route("**/api/assist", (route) => route.fulfill({ json: { ...fixedRightTriangle, message: "A ở dưới trái, AB sang phải và AC hướng lên. Đây là bản xem trước." } }));
+  await page.getByRole("textbox", { name: "Yêu cầu hình học" }).fill("Vẽ tam giác ABC vuông tại A, đường cao AH biết AB=9 cm, AC=12 cm.");
+  await page.getByRole("button", { name: "Gửi yêu cầu" }).click();
+  await expect(page.getByRole("button", { name: "Áp dụng", exact: true })).toBeEnabled({ timeout: 30000 });
+  await page.unroute("**/api/assist");
+  await observeAgent(page);
+  await page.getByRole("textbox", { name: "Yêu cầu hình học" }).fill("điểm A ở bên dưới trái á, sửa lại hình cho đúng và cho kéo chỉnh được mà vẫn giữ các độ dài đã cho");
+  await page.getByRole("button", { name: "Gửi yêu cầu" }).click();
+  const result = await completedAgentReply(page, 0);
+  expect(result.plan.status, result.plan.message).toBe("ready_to_preview");
+  await expect(page.getByRole("button", { name: "Áp dụng", exact: true })).toBeEnabled();
+  expect(result.plan.checks.some((check) => check.kind === "coordinate_order")).toBe(true);
+  await page.getByRole("button", { name: "Áp dụng", exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.axio!.objects.filter((o) => o.type === "point").length)).toBeGreaterThanOrEqual(4);
+  const geometry = await page.evaluate(() => {
+    const c = window.axio!, a = c.adapter.api;
+    return { A: {x:a.getXcoord("A"),y:a.getYcoord("A")}, B: {x:a.getXcoord("B"),y:a.getYcoord("B")}, C: {x:a.getXcoord("C"),y:a.getYcoord("C")}, movable: c.objects.filter((o) => o.type === "point" && o.visible && o.moveable).map((o) => o.name), circles: c.objects.filter((o) => o.type === "circle" && o.visible).length, mode: a.getMode() };
+  });
+  await writeFile("docs/orientation-live-response.json", JSON.stringify({reply:result.plan,geometry},null,2));
+  expect(geometry.A.x).toBeLessThan(geometry.B.x);
+  expect(geometry.A.y).toBeLessThan(geometry.C.y);
+  expect(geometry.movable.length).toBeGreaterThanOrEqual(2);
+  expect(geometry.circles).toBe(0); expect(geometry.mode).toBe(0);
+  const control = geometry.movable.find((name) => name !== "A")!;
+  const start = await page.evaluate((n) => { const a=window.axio!.adapter.api,v=JSON.parse(a.getViewProperties(1)),r=document.querySelector(".EuclidianPanel")!.getBoundingClientRect(); return {x:r.left+(a.getXcoord(n)-v.xMin)/v.invXscale,y:r.top+v.height-(a.getYcoord(n)-v.yMin)/v.invYscale, worldX:a.getXcoord(n),worldY:a.getYcoord(n)}; }, control);
+  await page.mouse.move(start.x,start.y); await page.mouse.down(); await page.mouse.move(start.x-20,start.y-45,{steps:15}); await page.mouse.up();
+  const after = await page.evaluate((n) => { const a=window.axio!.adapter.api;const d=(p:string,q:string)=>Math.hypot(a.getXcoord(p)-a.getXcoord(q),a.getYcoord(p)-a.getYcoord(q));return { x:a.getXcoord(n),y:a.getYcoord(n),AB:d("A","B"),AC:d("A","C"),AH:d("A","H") };}, control);
+  expect(Math.hypot(after.x-start.worldX,after.y-start.worldY)).toBeGreaterThan(0.05);
+  expect(after.AB).toBeCloseTo(9);expect(after.AC).toBeCloseTo(12);expect(after.AH).toBeCloseTo(7.2);
+  await writeFile("docs/orientation-live-response.json", JSON.stringify({reply:result.plan,geometry,after},null,2));
+  await page.screenshot({path:"docs/orientation-drag-live.png"});
+});

@@ -2,6 +2,7 @@ import {
   AGENT_TIMEOUT_MS,
   replySchema,
   type AIReply,
+  type GeometryObject,
   type PendingIntent,
   type ConversationEntry,
   type AgentProgress,
@@ -22,6 +23,7 @@ export async function askAssistant(
   signal?: AbortSignal,
   onProgress?: (event: AgentProgress) => void,
   validationFeedback?: { message: string; previous: AIReply },
+  previewObjects?: GeometryObject[],
 ): Promise<AIReply> {
   const response = await fetch("/api/assist", {
     method: "POST",
@@ -31,6 +33,7 @@ export async function askAssistant(
       selection: controller.selection,
       selections: controller.selectedNames,
       objects: controller.adapter.objects(),
+      ...(previewObjects?.length ? { preview_objects: previewObjects } : {}),
       conversation: conversation
         .slice(-12)
         .map((message) => conversationEntrySchema.parse(message)),

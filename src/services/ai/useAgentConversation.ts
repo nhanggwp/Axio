@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   type AIReply,
+  type GeometryObject,
   type PendingIntent,
 } from "../../../shared/actions";
 import type { GeometryController } from "../../geometry/GeometryController";
@@ -22,6 +23,7 @@ export function useAgentConversation(
   onCancelPreview: () => void,
   initialDraft?: ChatDraft,
   suspended = false,
+  previewObjects?: GeometryObject[],
 ) {
   const [initial] = useState(() => initialDraft ?? restored()),
     [messages, setMessages] = useState<Message[]>(initial.messages),
@@ -99,7 +101,7 @@ export function useAgentConversation(
           if (abort.signal.aborted) return;
           if (event.type === "text") { setPartial(event.text); streamedText.current = event.text; }
           else setPhase(attempt && event.phase === "generating" ? "repairing" : event.phase);
-        }, feedback);
+        }, feedback, previewObjects);
         if (abort.signal.aborted) return;
         replyId = crypto.randomUUID();
         setPartial("");

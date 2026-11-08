@@ -7,6 +7,9 @@ export const geometryCheckSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("reflection"), refs: z.tuple([labelSchema, labelSchema, labelSchema]) }).strict(),
   z.object({ kind: z.literal("on_circle"), refs: z.tuple([labelSchema, labelSchema]) }).strict(),
   z.object({ kind: z.literal("perpendicular"), refs: z.tuple([labelSchema, labelSchema]) }).strict(),
+  z.object({ kind: z.literal("coordinate_order"), refs: z.tuple([labelSchema, labelSchema]), axis: z.enum(["x", "y"]) }).strict(),
+  z.object({ kind: z.literal("distance"), refs: z.tuple([labelSchema, labelSchema]), value: z.number().finite().positive().max(100000) }).strict(),
+  z.object({ kind: z.literal("moveable"), refs: z.array(labelSchema).min(1).max(12) }).strict(),
   z.object({ kind: z.literal("dependent"), refs: z.array(labelSchema).min(1).max(12) }).strict(),
 ]);
 export type GeometryCheck = z.infer<typeof geometryCheckSchema>;
@@ -20,7 +23,9 @@ export const actionSchema = z.discriminatedUnion("type", [
       type: z.literal("construct"),
       label: labelSchema,
       auxiliary: z.boolean().optional(),
+      position: z.object({ x: n, y: n }).strict().optional(),
       kind: z.enum([
+        "point_on",
         "segment",
         "line",
         "ray",
@@ -176,6 +181,7 @@ export const requestSchema = z
     pending: pendingIntentSchema.nullable().default(null),
     validation_feedback: z.object({ message: z.string().min(1).max(4000), previous: replySchema }).strict().optional(),
     objects: z.array(objectSchema).max(400),
+    preview_objects: z.array(objectSchema).max(400).optional(),
     conversation: z
       .array(conversationEntrySchema)
       .max(12),

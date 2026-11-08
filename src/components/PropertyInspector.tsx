@@ -18,6 +18,7 @@ export function PropertyInspector({
   const o = controller.objects.find((o) => o.name === controller.selection);
   const [rename, setRename] = useState("");
   if (!o) return null;
+  const controls = !o.moveable ? controller.controlPoints(o.name) : [];
   const change = (fn: () => void) => {
     try {
       controller.mutate(fn);
@@ -78,7 +79,7 @@ export function PropertyInspector({
                 step="any"
                 key={`${o.name}-${o[axis]}`}
                 defaultValue={o[axis] ?? 0}
-                disabled={!o.independent || !o.moveable}
+                disabled={!o.moveable}
                 onBlur={(e) => {
                   const val = Number(e.target.value);
                   if (!Number.isFinite(val) || Math.abs(val) > 100000) {
@@ -109,6 +110,7 @@ export function PropertyInspector({
           : o.moveable
             ? "Đối tượng bị ràng buộc · kéo trên quỹ tích"
             : "Đối tượng phụ thuộc · thay đổi qua đối tượng gốc"}
+        {controls.length > 0 && ` · Kéo ${controls.join(" hoặc ")} để chỉnh hình.`}
       </small>
       <p className="eyebrow">QUAN HỆ PHỤ THUỘC</p>
       <p className="definition">

@@ -8,6 +8,7 @@ const specifications: Record<
   string,
   { command: string; counts: number[]; types?: string[][]; result: string }
 > = {
+  point_on: { command: "Point", counts: [1], types: [["line", "segment", "ray", "circle", "conic"]], result: "point" },
   segment: {
     command: "Segment",
     counts: [2],
@@ -184,6 +185,8 @@ export function executeActions(
         if (a.kind === "circle" && a.refs.length === 3) a.kind = "circumcircle";
         if (a.kind === "circle" && a.refs.length === 1 && a.value !== undefined)
           a.kind = "circle_radius";
+        if (a.kind === "point_on" && a.value !== undefined) throw new Error("Dùng position để khởi tạo điểm kéo được trên quỹ tích.");
+        if (a.position && a.kind !== "point_on") throw new Error("Vị trí ban đầu chỉ dùng cho điểm trên quỹ tích.");
         const spec = specifications[a.kind];
         if (!spec.counts.includes(a.refs.length))
           throw new Error("Số đối tượng tham chiếu không đúng.");
@@ -286,6 +289,8 @@ export function executeActions(
           if (!api.renameObject(boundary, a.label))
             throw new Error("Không thể đặt tên cạnh đa giác.");
         } else adapter.command(`${a.label}=${spec.command}(${refs.join(",")})`);
+        // Point(path, parameter) fixes its parameter; initialize a movable path point instead.
+        if (a.kind === "point_on" && a.position) api.setCoords(a.label, a.position.x, a.position.y);
       }
       if (a.type === "altitude") {
         need(a.vertex, ["point"]);
@@ -319,8 +324,8 @@ export function executeActions(
       }
       if (a.type === "move") {
         need(a.target, ["point"]);
-        if (!api.isIndependent(a.target) || !api.isMoveable(a.target))
-          throw new Error("Chỉ có thể sửa tọa độ điểm tự do chưa khóa.");
+        if (!api.isMoveable(a.target))
+          throw new Error("Điểm này phụ thuộc phép dựng hoặc đã khóa. Hãy chỉnh điểm điều khiển của nó.");
         api.setCoords(a.target, a.x, a.y);
       }
       if (a.type === "delete") {

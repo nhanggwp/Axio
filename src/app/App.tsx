@@ -10,7 +10,7 @@ import { AIAssistant } from "../components/AIAssistant";
 import { PropertyInspector } from "../components/PropertyInspector";
 import { DocumentDialog } from "../components/DocumentDialog";
 import { Icon, IconButton } from "../components/Icon";
-import type { AIReply } from "../../shared/actions";
+import type { AIReply, GeometryObject } from "../../shared/actions";
 import { SelectionInteractions } from "../components/SelectionInteractions";
 import { BatchInspector } from "../components/BatchInspector";
 import { constructionKey } from "../geometry/GeometryState";
@@ -64,6 +64,7 @@ export default function App() {
     reply: AIReply;
     data: string;
     baseline: string;
+    objects?: GeometryObject[];
   } | null>(null);
   const previewCompletion = useRef<{
     resolve: () => void;
@@ -231,6 +232,9 @@ export default function App() {
         throw new Error("Hình đã thay đổi. Hãy yêu cầu xem trước lại.");
       controller.apply(preview.reply.actions, preview.reply.checks);
       if (preview.reply.actions.some((a) => a.type === "point" || a.type === "construct" || a.type === "altitude")) controller.adapter.resetView();
+      controller.setMode(0);
+      setMode(0);
+      setHint("Di chuyển · kéo điểm điều khiển để chỉnh hình");
       setPreview(null);
       return true;
     } catch (e) {
@@ -356,6 +360,7 @@ export default function App() {
                         ["line", "segment", "circle", "conic"].includes(o.type)
                       )
                         adapter.api.setLineStyle(o.name, 1);
+                    setPreview((current) => current?.id === preview.id ? { ...current, objects: adapter.objects() } : current);
                     setPreviewReady(true);
                     previewCompletion.current?.resolve();
                     previewCompletion.current = null;
@@ -402,7 +407,7 @@ export default function App() {
           </div>
           {preview && (
             <div className="preview-banner">
-              <b>XEM TRƯỚC</b>Thay đổi chưa được áp dụng.
+              <b>XEM TRƯỚC</b>Bấm Áp dụng để kéo và chỉnh hình.
             </div>
           )}
           <SelectionInteractions
@@ -467,6 +472,7 @@ export default function App() {
               onClose={() => setRight(null)}
               onPreview={beginPreview}
               preview={preview?.reply || null}
+              previewObjects={preview?.objects}
               onCancel={() => setPreview(null)}
               onApply={apply}
               previewReady={previewReady}

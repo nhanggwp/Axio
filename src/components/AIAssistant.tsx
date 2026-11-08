@@ -1,5 +1,5 @@
 import { useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
-import type { AIReply } from "../../shared/actions";
+import type { AIReply, GeometryObject } from "../../shared/actions";
 import type { GeometryController } from "../geometry/GeometryController";
 import { useAgentConversation } from "../services/ai/useAgentConversation";
 import { IconButton } from "./Icon";
@@ -9,6 +9,7 @@ export function AIAssistant({
   onClose,
   onPreview,
   preview,
+  previewObjects,
   onCancel,
   onApply,
   previewReady,
@@ -23,6 +24,7 @@ export function AIAssistant({
   onClose: () => void;
   onPreview: (reply: AIReply) => Promise<void>;
   preview: AIReply | null;
+  previewObjects?: GeometryObject[];
   onCancel: () => void;
   onApply: () => boolean;
   previewReady: boolean;
@@ -43,6 +45,7 @@ export function AIAssistant({
       onCancel,
       initialChat,
       suspended,
+      previewObjects,
     ),
     conversationRef = useRef<HTMLDivElement>(null),
     followBottom = useRef(true);
