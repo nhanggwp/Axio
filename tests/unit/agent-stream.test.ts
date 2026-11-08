@@ -13,6 +13,14 @@ function provider(pieces: string[], done = true) {
   return new Response(pieces.map((content) => `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\r\n\r\n`).join("") + (done ? "data: [DONE]\r\n\r\n" : ""), { headers: { "Content-Type": "text/event-stream" } });
 }
 describe("streamed agent contract", () => {
+  it("can correct a mistaken dependency check for deliberately free root points", async () => {
+    const previous = replySchema.parse({ status: "ready_to_preview", message: "Đề xuất điểm tự do.", checks: [{ kind: "dependent", refs: ["P"] }], actions: [{ type: "point", label: "P", x: 1, y: 2 }] });
+    const request = requestSchema.parse({ ...body, validation_feedback: { message: "P đang là đối tượng tự do.", previous } });
+    const fetch = vi.spyOn(globalThis, "fetch").mockResolvedValue(provider([JSON.stringify({ ...previous, checks: [] })]));
+    const result = await runAgent(request, config, { onProgress: () => {} });
+    expect(result.checks).toEqual([]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
   it("cannot drop declared geometric requirements to make a repair appear valid", async () => {
     const previous = replySchema.parse({ status: "ready_to_preview", message: "Đề xuất.", checks: [{ kind: "on_segment", refs: ["S", "P", "Q"] }], actions: [{ type: "point", label: "S", x: 0, y: 0 }] });
     const request = requestSchema.parse({ ...body, validation_feedback: { message: "S không nằm trên PQ.", previous } });

@@ -19,3 +19,20 @@ export function formatSegmentLabels(api: GGBApi, names = api.getAllObjectNames("
     if (api.getLabelStyle(name) !== 3) api.setLabelStyle(name, 3);
   }
 }
+
+/** Keep polygon-owned edges for dependencies, but do not print a second caption. */
+export function hideDuplicateBoundaryLabels(api: GGBApi, names = api.getAllObjectNames("segment")) {
+  const groups = new Map<string, { name: string; boundary: boolean }[]>();
+  for (const name of api.getAllObjectNames("segment")) {
+    const match = api.getCommandString(name, false).match(/^Segment[\[(]\s*([^,\s]+)\s*,\s*([^,\]\)\s]+)(\s*,)?/);
+    if (!match) continue;
+    const key = JSON.stringify(match.slice(1, 3).sort());
+    const group = groups.get(key) ?? [];
+    group.push({ name, boundary: !!match[3] }); groups.set(key, group);
+  }
+  const targets = new Set(names);
+  for (const group of groups.values()) {
+    const primary = group.find((item) => !item.boundary) ?? group[0];
+    for (const item of group) if (item !== primary && item.boundary && targets.has(item.name)) api.setLabelVisible(item.name, false);
+  }
+}

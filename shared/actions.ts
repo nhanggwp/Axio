@@ -13,12 +13,13 @@ export type GeometryCheck = z.infer<typeof geometryCheckSchema>;
 const n = z.number().finite().min(-100000).max(100000);
 export const actionSchema = z.discriminatedUnion("type", [
   z
-    .object({ type: z.literal("point"), label: labelSchema, x: n, y: n })
+    .object({ type: z.literal("point"), label: labelSchema, x: n, y: n, auxiliary: z.boolean().optional() })
     .strict(),
   z
     .object({
       type: z.literal("construct"),
       label: labelSchema,
+      auxiliary: z.boolean().optional(),
       kind: z.enum([
         "segment",
         "line",
@@ -157,6 +158,7 @@ export const objectSchema = z.object({
   independent: z.boolean(),
   moveable: z.boolean(),
   visible: z.boolean(),
+  auxiliary: z.boolean().optional(),
   color: z.string().max(20),
   labelVisible: z.boolean().optional(),
   thickness: z.number().optional(),

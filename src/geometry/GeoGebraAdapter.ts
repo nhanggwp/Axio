@@ -1,7 +1,7 @@
 import type { GGBApi } from "../types/geogebra";
 import type { GeometryObject } from "../../shared/actions";
 import { triangleVertices } from "./triangleVertices";
-import { formatSegmentLabels, segmentDisplayName } from "./segmentLabels";
+import { formatSegmentLabels, hideDuplicateBoundaryLabels, segmentDisplayName } from "./segmentLabels";
 let script: Promise<void> | undefined;
 export function loadGeoGebra() {
   return (script ??= new Promise<void>((resolve, reject) => {
@@ -44,6 +44,7 @@ export class GeoGebraAdapter {
       independent: this.api.isIndependent(name),
       moveable: this.api.isMoveable(name),
       visible: this.api.getVisible(name),
+      auxiliary: /<auxiliary\b[^>]*val="true"/.test(this.api.getXML(name)),
       color: this.api.getColor(name),
       labelVisible: /<show[^>]*label="true"/.test(this.api.getXML(name)),
       thickness: this.api.getLineThickness(name),
@@ -74,6 +75,7 @@ export class GeoGebraAdapter {
     this.formatSegmentLabels();
   }
   formatSegmentLabels(names?: string[]) { formatSegmentLabels(this.api, names); }
+  hideDuplicateBoundaryLabels(names?: string[]) { hideDuplicateBoundaryLabels(this.api, names); }
   base64() {
     return new Promise<string>((resolve) => this.api.getBase64(resolve));
   }
@@ -113,7 +115,7 @@ export class GeoGebraAdapter {
     };
     const points = this.api
       .getAllObjectNames("point")
-      .filter((name) => this.api.isDefined(name))
+      .filter((name) => this.api.isDefined(name) && this.api.getVisible(name))
       .map((name) => ({
         x: this.api.getXcoord(name),
         y: this.api.getYcoord(name),

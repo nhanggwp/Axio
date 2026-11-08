@@ -36,6 +36,7 @@ export class GeometryController {
   } | null = null;
   constructor(readonly adapter: GeoGebraAdapter) {
     adapter.formatSegmentLabels();
+    adapter.hideDuplicateBoundaryLabels();
     this.history.reset(adapter.snapshot());
     this.saved = constructionKey(adapter.snapshot());
     this.key = this.saved;
@@ -108,7 +109,10 @@ export class GeometryController {
     if (polygon) a.setFilling(name, 0.18);
     if (type === "point") a.setPointSize(name, 3);
     a.setLabelVisible(name, ["point", "segment", "angle"].includes(type));
-    if (type === "segment") this.adapter.formatSegmentLabels([name]);
+    if (type === "segment") {
+      this.adapter.formatSegmentLabels([name]);
+      this.adapter.hideDuplicateBoundaryLabels([name]);
+    }
     if (
       this.mode !== 0 &&
       (type !== "point" || this.mode === 1 || this.mode === 501)
@@ -316,6 +320,7 @@ export class GeometryController {
       this.adapter.api.setPerspective("G");
       this.adapter.api.setRounding("2");
       this.adapter.formatSegmentLabels();
+      this.adapter.hideDuplicateBoundaryLabels();
       this.documentGeneration++;
       this.history.reset(this.adapter.snapshot());
       this.saved = constructionKey(this.adapter.snapshot());

@@ -23,6 +23,7 @@ export interface GGBApi {
   setLabelStyle(name: string, style: number): void;
   getLabelStyle(name: string): number;
   setCaption(name: string, caption: string): void;
+  setAuxiliary(name: string, auxiliary: boolean): void;
   getCaption(name: string, substitutePlaceholders: boolean): string;
   setLineThickness(name: string, width: number): void;
   setLineStyle(name: string, style: number): void;

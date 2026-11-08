@@ -150,6 +150,7 @@ export function executeActions(
   const api = adapter.api;
   const before = adapter.snapshot();
   const initialNames = new Set(api.getAllObjectNames());
+  const roles = new Map<string, boolean>(), visibility = new Map<string, boolean>();
   const need = (name: string, types?: string[]) => {
     if (!api.exists(name)) throw new Error(`Không tìm thấy đối tượng ${name}.`);
     if (types && !types.includes(api.getObjectType(name)))
@@ -332,6 +333,7 @@ export function executeActions(
             `Phép dựng làm ${name} không xác định. Kiểm tra các điểm trùng nhau, thẳng hàng hoặc điều kiện mâu thuẫn.`,
           );
         if (!prior.has(name)) {
+          if ((a.type === "point" || a.type === "construct") && a.auxiliary !== undefined) roles.set(name, a.auxiliary);
           const type = api.getObjectType(name);
           api.setLabelVisible(name, type === "point" || type === "segment");
           api.setLineThickness(name, 2);
@@ -350,8 +352,14 @@ export function executeActions(
           if (type === "point") api.setPointSize(name, 3);
         }
       }
+      if (a.type === "style" && a.visible !== undefined) visibility.set(a.target, a.visible);
+    }
+    for (const [name, auxiliary] of roles) if (api.exists(name)) {
+      api.setAuxiliary(name, auxiliary);
+      if (auxiliary && visibility.get(name) !== true) api.setVisible(name, false);
     }
     adapter.formatSegmentLabels();
+    adapter.hideDuplicateBoundaryLabels(api.getAllObjectNames().filter((name) => !initialNames.has(name)));
     validateGeometry(adapter, checks);
   } catch (error) {
     adapter.restore(before);
