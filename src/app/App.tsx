@@ -23,7 +23,10 @@ import { useViewport } from "../geometry/useViewport";
 import { useEditorSessions } from "../sessions/useEditorSessions";
 import { SessionControls } from "../sessions/SessionControls";
 import type { ChatBridge } from "../sessions/model";
+import { shouldShowWelcome, WelcomeScreen } from "../components/WelcomeScreen";
 export default function App() {
+  const [welcomeOpen, setWelcomeOpen] = useState(shouldShowWelcome);
+  const welcomeWasOpen = useRef(welcomeOpen);
   const session = authClient.useSession();
   const [authView, setAuthView] = useState<AuthView | null>(() =>
     new URLSearchParams(location.search).get("auth") === "reset"
@@ -39,6 +42,12 @@ export default function App() {
     affected: string[];
   } | null>(null);
   const canvasRef = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!welcomeOpen && welcomeWasOpen.current) {
+      welcomeWasOpen.current = false;
+      canvasRef.current?.focus({ preventScroll: true });
+    }
+  }, [welcomeOpen]);
 
   const [controller, setController] = useState<GeometryController>();
   const [, render] = useState(0);
@@ -129,7 +138,7 @@ export default function App() {
   }, [controller, sessions.pendingSave, sessions.saving, sessions.error, sessions.ready]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (sessions.busy) return;
+      if (sessions.busy || welcomeOpen) return;
       if (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
@@ -167,7 +176,7 @@ export default function App() {
     };
     window.addEventListener("keydown", key);
     return () => window.removeEventListener("keydown", key);
-  }, [controller, preview, dialog, authView, accountDocuments, sessions.busy]);
+  }, [controller, preview, dialog, authView, accountDocuments, sessions.busy, welcomeOpen]);
   function ready(adapter: GeoGebraAdapter) {
     controllerRef.current?.dispose();
     const c = new GeometryController(adapter);
@@ -232,7 +241,7 @@ export default function App() {
     }
   };
   return (
-    <main className="application">
+    <><main className="application" inert={welcomeOpen}>
       <header className="topbar">
         <div className="brand">
           <Icon name="polygon" />
@@ -622,6 +631,6 @@ export default function App() {
           />
         </div>
       )}
-    </main>
+    </main>{welcomeOpen && <WelcomeScreen onClose={() => setWelcomeOpen(false)} />}</>
   );
 }

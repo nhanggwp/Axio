@@ -35,6 +35,7 @@ export class GeometryController {
     moved: boolean;
   } | null = null;
   constructor(readonly adapter: GeoGebraAdapter) {
+    adapter.formatSegmentLabels();
     this.history.reset(adapter.snapshot());
     this.saved = constructionKey(adapter.snapshot());
     this.key = this.saved;
@@ -71,6 +72,7 @@ export class GeometryController {
   }
   sync = () => {
     if (this.disposed) return;
+    this.adapter.formatSegmentLabels();
     this.objects = this.adapter.objects();
     this.selections.set(this.selectedNames, (n) => this.adapter.api.exists(n));
     const key = constructionKey(this.adapter.snapshot());
@@ -106,7 +108,7 @@ export class GeometryController {
     if (polygon) a.setFilling(name, 0.18);
     if (type === "point") a.setPointSize(name, 3);
     a.setLabelVisible(name, ["point", "segment", "angle"].includes(type));
-    if (type === "segment") a.setLabelStyle(name, 1);
+    if (type === "segment") this.adapter.formatSegmentLabels([name]);
     if (
       this.mode !== 0 &&
       (type !== "point" || this.mode === 1 || this.mode === 501)
@@ -251,6 +253,7 @@ export class GeometryController {
     this.paused = true;
     try {
       fn();
+      this.adapter.formatSegmentLabels();
       this.history.push(this.adapter.snapshot());
     } catch (e) {
       this.adapter.restore(before);
@@ -312,6 +315,7 @@ export class GeometryController {
       });
       this.adapter.api.setPerspective("G");
       this.adapter.api.setRounding("2");
+      this.adapter.formatSegmentLabels();
       this.documentGeneration++;
       this.history.reset(this.adapter.snapshot());
       this.saved = constructionKey(this.adapter.snapshot());

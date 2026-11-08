@@ -3,8 +3,10 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
 import path from "node:path";
 /** Transparent cache of original public CDN bytes, not a geometry mock. */
-export const test = base.extend({
-  page: async ({ page }, use) => {
+export const test = base.extend<{ showWelcome: boolean }>({
+  showWelcome: [false, { option: true }],
+  page: async ({ page, showWelcome }, use) => {
+    if (!showWelcome) await page.addInitScript(() => { try { localStorage.setItem("axio-welcome-seen-v1", "1"); } catch {} });
     const directory = path.resolve(".cache/geogebra");
     await mkdir(path.resolve("docs"), { recursive: true });
     await mkdir(directory, { recursive: true });

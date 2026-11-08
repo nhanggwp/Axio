@@ -150,6 +150,7 @@ export const agentEventSchema = z.discriminatedUnion("type", [
 export type AgentProgress = Extract<z.infer<typeof agentEventSchema>, { type: "phase" | "text" }>;
 export const objectSchema = z.object({
   name: z.string().max(64),
+  displayName: z.string().max(128).optional(),
   type: z.string().max(40),
   value: z.string().max(500),
   definition: z.string().max(1000),

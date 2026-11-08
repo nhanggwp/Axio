@@ -30,7 +30,7 @@ export function BatchInspector({
         <IconButton icon="close" label="Đóng thuộc tính" onClick={onClose} />
       </header>
       <h2>{selected.length} đối tượng</h2>
-      <p>{selected.map((o) => o.name).join(" · ")}</p>
+      <p>{selected.map((o) => o.displayName ?? o.name).join(" · ")}</p>
       <div className="color-picker">
         <span>Nét vẽ</span>
         {["#23232D", "#4F18E9", "#09EFF8", "#E31665"].map((color) => (

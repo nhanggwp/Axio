@@ -1,6 +1,7 @@
 import type { GGBApi } from "../types/geogebra";
 import type { GeometryObject } from "../../shared/actions";
 import { triangleVertices } from "./triangleVertices";
+import { formatSegmentLabels, segmentDisplayName } from "./segmentLabels";
 let script: Promise<void> | undefined;
 export function loadGeoGebra() {
   return (script ??= new Promise<void>((resolve, reject) => {
@@ -36,6 +37,7 @@ export class GeoGebraAdapter {
   objects(): GeometryObject[] {
     return this.api.getAllObjectNames().map((name) => ({
       name,
+      displayName: segmentDisplayName(this.api, name),
       type: this.api.getObjectType(name),
       value: this.api.getValueString(name, false),
       definition: this.api.getCommandString(name, false),
@@ -69,7 +71,9 @@ export class GeoGebraAdapter {
   }
   restore(xml: string) {
     this.api.setXML(xml);
+    this.formatSegmentLabels();
   }
+  formatSegmentLabels(names?: string[]) { formatSegmentLabels(this.api, names); }
   base64() {
     return new Promise<string>((resolve) => this.api.getBase64(resolve));
   }

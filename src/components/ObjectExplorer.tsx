@@ -46,7 +46,7 @@ export function ObjectExplorer({
               .filter(
                 (o) =>
                   (types as readonly string[]).includes(o.type) &&
-                  o.name.toLowerCase().includes(search.toLowerCase()),
+                  [o.name, o.displayName].some((name) => name?.toLowerCase().includes(search.toLowerCase())),
               )
               .map((o) => (
                 <div className="object-row" key={o.name}>
@@ -56,12 +56,12 @@ export function ObjectExplorer({
                       onSelect(o.name, e.shiftKey || e.ctrlKey || e.metaKey)
                     }
                   >
-                    <b>{o.name}</b>
+                    <b>{o.displayName ?? o.name}</b>
                     <span title={o.value}>{formatObject(o)}</span>
                   </button>
                   <IconButton
                     icon="eye"
-                    label={`${o.visible ? "Ẩn" : "Hiện"} ${o.name}`}
+                    label={`${o.visible ? "Ẩn" : "Hiện"} ${o.displayName ?? o.name}`}
                     className={o.visible ? "" : "invisible-object"}
                     onClick={() =>
                       controller.apply([

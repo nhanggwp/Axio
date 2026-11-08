@@ -37,7 +37,7 @@ export function PropertyInspector({
         <IconButton icon="close" label="Đóng thuộc tính" onClick={onClose} />
       </header>
       <h2>
-        {o.type === "point" ? "Điểm" : "Đối tượng"} {o.name}
+        {o.type === "point" ? "Điểm" : "Đối tượng"} {o.displayName ?? o.name}
       </h2>
       <label className="field">
         Tên

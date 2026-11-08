@@ -288,7 +288,7 @@ export function AIAssistant({
           <div>
             <small>
               Tham chiếu:{" "}
-              {controller?.selectedNames.join(", ") || "hình hiện tại"}
+              {controller?.selectedNames.map((name) => controller.objects.find((o) => o.name === name)?.displayName ?? name).join(", ") || "hình hiện tại"}
             </small>
             {agent.busy ? <button className="stop-response" type="button" onClick={agent.stop}>Dừng phản hồi</button> : <IconButton
               type="submit"

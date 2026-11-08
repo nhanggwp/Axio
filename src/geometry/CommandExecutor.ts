@@ -348,10 +348,10 @@ export function executeActions(
             api.setFilling(name, 0.18);
           } else if (a.type !== "altitude") adapter.color(name, "#23232D");
           if (type === "point") api.setPointSize(name, 3);
-          if (type === "segment") api.setLabelStyle(name, 1);
         }
       }
     }
+    adapter.formatSegmentLabels();
     validateGeometry(adapter, checks);
   } catch (error) {
     adapter.restore(before);

@@ -21,6 +21,9 @@ export interface GGBApi {
   setVisible(name: string, visible: boolean): void;
   setLabelVisible(name: string, visible: boolean): void;
   setLabelStyle(name: string, style: number): void;
+  getLabelStyle(name: string): number;
+  setCaption(name: string, caption: string): void;
+  getCaption(name: string, substitutePlaceholders: boolean): string;
   setLineThickness(name: string, width: number): void;
   setLineStyle(name: string, style: number): void;
   setPointSize(name: string, size: number): void;
