@@ -1,3 +1,4 @@
+import { seedTriangle } from "../helpers/sample";
 import { test, expect } from "../fixtures";
 test.use({ showWelcome: true });
 
@@ -14,7 +15,7 @@ test("first visit has an animated welcome; starting preserves the editor and lat
   await expect(page.locator(".application")).not.toHaveAttribute("inert", "");
   await expect(page.getByRole("button", { name: "Tạo phiên mới", exact: true })).toBeEnabled({ timeout: 60000 });
   expect(await page.evaluate(() => window.axio!.objects.length)).toBe(0);
-  await page.getByRole("button", { name: "Dựng ví dụ tam giác", exact: true }).click();
+  await seedTriangle(page);
   await expect(page.locator(".session-save-status")).toHaveText("Đã lưu phiên cục bộ");
   await page.reload();
   await expect(welcome).toBeHidden();

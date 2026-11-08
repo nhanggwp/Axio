@@ -1,12 +1,11 @@
+import { seedTriangle } from "../helpers/sample";
 import { test, expect } from "../fixtures";
 async function ready(page: import("@playwright/test").Page) {
   await page.goto("/");
   await page.waitForFunction(() => !!window.axio, undefined, {
     timeout: 60000,
   });
-  await page
-    .getByRole("button", { name: "Dựng ví dụ tam giác", exact: true })
-    .click();
+  await seedTriangle(page);
 }
 test("A/B/C/F: real engine, altitude, dynamic dependency, persistence and undo", async ({
   page,
@@ -57,7 +56,7 @@ test("A/B/C/F: real engine, altitude, dynamic dependency, persistence and undo",
     await page.evaluate(() => window.axio!.adapter.api.getValue("BC")),
   ).toBeCloseTo(5);
   await page
-    .getByRole("button", { name: "Khảo sát tam giác vuông", exact: true })
+    .getByRole("button", { name: "Hình dựng mới", exact: true })
     .click();
   await page
     .getByRole("button", { name: "Lưu trên thiết bị", exact: true })

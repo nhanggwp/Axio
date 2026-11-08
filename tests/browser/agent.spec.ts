@@ -1,3 +1,4 @@
+import { seedTriangle } from "../helpers/sample";
 import { test, expect } from "../fixtures";
 test("selection continues the same pending perpendicular intent across two clarification steps", async ({
   page,
@@ -6,9 +7,7 @@ test("selection continues the same pending perpendicular intent across two clari
   await page.waitForFunction(() => !!window.axio, undefined, {
     timeout: 60000,
   });
-  await page
-    .getByRole("button", { name: "Dựng ví dụ tam giác", exact: true })
-    .click();
+  await seedTriangle(page);
   let turn = 0;
   const payloads: Record<string, unknown>[] = [];
   await page.route("**/api/assist", async (route) => {

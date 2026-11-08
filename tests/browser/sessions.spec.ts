@@ -1,3 +1,4 @@
+import { seedTriangle } from "../helpers/sample";
 import { test, expect, type Page } from "../fixtures";
 import { verifiedAccount, password, post } from "../helpers/auth";
 async function ready(page: Page) {
@@ -23,7 +24,7 @@ test("each session retains independent geometry, chat, composer and undo across 
     const body = route.request().postDataJSON(); payloads.push(body);
     return route.fulfill({ json: { status: "explanation", message: body.request.includes("đầu") ? "Hội thoại của phiên đầu." : "Hội thoại của phiên thứ hai.", actions: [] } });
   });
-  await page.getByRole("button", { name: "Dựng ví dụ tam giác", exact: true }).click();
+  await seedTriangle(page);
   const composer = page.getByRole("textbox", { name: "Yêu cầu hình học" });
   await composer.fill("Giải thích hình ở phiên đầu.");
   await page.getByRole("button", { name: "Gửi yêu cầu" }).click();
@@ -63,7 +64,7 @@ test("each session retains independent geometry, chat, composer and undo across 
 
 test("clarification and automatic selection continuation remain within their session", async ({ page }) => {
   await ready(page);
-  await page.getByRole("button", { name: "Dựng ví dụ tam giác", exact: true }).click();
+  await seedTriangle(page);
   const requests: { pending?: { id: string }; objects: { name: string }[] }[] = [];
   await page.route("**/api/assist", (route) => {
     requests.push(route.request().postDataJSON());

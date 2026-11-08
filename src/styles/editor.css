@@ -889,27 +889,6 @@ p {
 .workspace:focus {
   outline: none;
 }
-.empty-workspace {
-  position: absolute;
-  left: 50%;
-  top: 46%;
-  transform: translate(-50%, -50%);
-  z-index: 3;
-  text-align: center;
-  width: min(360px, 85%);
-  background: #ffffffdc;
-  padding: 20px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-.empty-workspace h2 {
-  font-size: 20px;
-  margin: 0 0 8px;
-}
-.empty-workspace p {
-  font-size: 13px;
-  margin: 0 0 16px;
-}
 .selection-marquee {
   position: absolute;
   pointer-events: none;

@@ -1,3 +1,4 @@
+import { seedTriangle } from "../helpers/sample";
 import { test, expect } from "../fixtures";
 import { verifiedAccount, origin, password } from "../helpers/auth";
 test("guest geometry survives login; account documents autosave, reload, rename and delete", async ({
@@ -10,9 +11,7 @@ test("guest geometry survives login; account documents autosave, reload, rename 
   await page.waitForFunction(() => !!window.axio, undefined, {
     timeout: 60000,
   });
-  await page
-    .getByRole("button", { name: "Dựng ví dụ tam giác", exact: true })
-    .click();
+  await seedTriangle(page);
   await page
     .getByRole("button", { name: "Tài liệu của tôi", exact: true })
     .click();
@@ -74,7 +73,7 @@ test("guest geometry survives login; account documents autosave, reload, rename 
     .click();
   await expect(page.locator(".account-document-list article")).toHaveCount(1);
   await page
-    .getByRole("button", { name: "Đổi tên Khảo sát tam giác vuông" })
+    .getByRole("button", { name: "Đổi tên Hình dựng mới" })
     .click();
   await page
     .getByRole("textbox", { name: "Tên tài liệu mới" })

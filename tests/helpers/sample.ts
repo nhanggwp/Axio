@@ -1,5 +1,6 @@
+import type { Page } from "@playwright/test";
 import type { GeometryAction } from "../../shared/actions";
-/** Optional, explicitly requested demo. Never the default document. */
+/** Test fixture for geometry, selection and persistence checks. */
 export const rightTriangleExample: GeometryAction[] = [
   { type: "point", label: "A", x: 0, y: 0 },
   { type: "point", label: "B", x: 3, y: 0 },
@@ -16,3 +17,11 @@ export const rightTriangleExample: GeometryAction[] = [
     refs: ["A", "B", "C"],
   },
 ];
+
+export async function seedTriangle(page: Page) {
+  await page.locator(".session-loading").waitFor({ state: "hidden" });
+  await page.evaluate((actions) => {
+    window.axio!.apply(actions);
+    window.axio!.adapter.resetView();
+  }, rightTriangleExample);
+}

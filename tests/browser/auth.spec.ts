@@ -1,3 +1,4 @@
+import { seedTriangle } from "../helpers/sample";
 import { test, expect } from "../fixtures";
 import {
   origin,
@@ -15,9 +16,7 @@ test("real email registration, verification, login, session restoration, passwor
   await page.waitForFunction(() => !!window.axio, undefined, {
     timeout: 60000,
   });
-  await page
-    .getByRole("button", { name: "Dựng ví dụ tam giác", exact: true })
-    .click();
+  await seedTriangle(page);
   await page.getByRole("button", { name: "Đăng nhập", exact: true }).click();
   await page
     .getByRole("button", { name: "Tạo tài khoản", exact: true })

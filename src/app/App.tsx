@@ -13,7 +13,6 @@ import { Icon, IconButton } from "../components/Icon";
 import type { AIReply } from "../../shared/actions";
 import { SelectionInteractions } from "../components/SelectionInteractions";
 import { BatchInspector } from "../components/BatchInspector";
-import { rightTriangleExample } from "../geometry/examples";
 import { constructionKey } from "../geometry/GeometryState";
 import { authClient } from "../auth/client";
 import { AuthDialog, type AuthView } from "../auth/AuthDialog";
@@ -404,21 +403,6 @@ export default function App() {
           {preview && (
             <div className="preview-banner">
               <b>XEM TRƯỚC</b>Thay đổi chưa được áp dụng.
-            </div>
-          )}
-          {controller && controller.objects.length === 0 && !preview && (
-            <div className="empty-workspace">
-              <h2>Bắt đầu dựng hình</h2>
-              <p>Chọn công cụ Điểm hoặc mô tả hình cho trợ lý.</p>
-              <button
-                onClick={() => {
-                  controller.apply(rightTriangleExample);
-                  controller.adapter.resetView();
-                  setTitle("Khảo sát tam giác vuông");
-                }}
-              >
-                Dựng ví dụ tam giác
-              </button>
             </div>
           )}
           <SelectionInteractions

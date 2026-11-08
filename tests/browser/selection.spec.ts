@@ -1,3 +1,4 @@
+import { seedTriangle } from "../helpers/sample";
 import { test, expect, type Page } from "../fixtures";
 async function ready(page: Page, sample = true) {
   await page.goto("/");
@@ -6,9 +7,7 @@ async function ready(page: Page, sample = true) {
   });
   await expect(page.locator(".session-loading")).toBeHidden();
   if (sample)
-    await page
-      .getByRole("button", { name: "Dựng ví dụ tam giác", exact: true })
-      .click();
+    await seedTriangle(page);
 }
 async function position(page: Page, name: string) {
   return page.evaluate((n) => {
@@ -37,9 +36,7 @@ test("blank production document, native single/modified clicks, explorer multi-s
 }) => {
   await ready(page, false);
   expect(await page.evaluate(() => window.axio!.objects.length)).toBe(0);
-  await page
-    .getByRole("button", { name: "Dựng ví dụ tam giác", exact: true })
-    .click();
+  await seedTriangle(page);
   const a = await position(page, "A"),
     b = await position(page, "B");
   await page.mouse.click(a.x, a.y);
