@@ -1,3 +1,4 @@
+import { geometryNames } from "../../shared/geometryNames";
 import { geometryCheckSchema, type GeometryCheck } from "../../shared/actions";
 import type { GeoGebraAdapter } from "./GeoGebraAdapter";
 
@@ -64,7 +65,7 @@ export function validateGeometry(adapter: GeoGebraAdapter, checks: GeometryCheck
       }
       if (check.kind === "moveable") for (const name of check.refs) {
         need(name, ["point"]);
-        if (!api.isMoveable(name)) failures.push(`${name} không kéo được. Cần điểm tự do hoặc point_on trên quỹ tích để làm điểm điều khiển.`);
+        if (!api.isMoveable(name) || !api.getVisible(name)) failures.push(`${name} không kéo được. Cần điểm tự do hoặc point_on hiển thị trên quỹ tích để làm điểm điều khiển.`);
       }
       if (check.kind === "dependent") for (const name of check.refs) {
         need(name);
@@ -82,8 +83,9 @@ export function validateDynamicGeometry(adapter: GeoGebraAdapter, checks: Geomet
   const visit = (name: string) => {
     if (visited.has(name) || !api.exists(name)) return;
     visited.add(name);
-    if (api.getObjectType(name) === "point" && api.isIndependent(name) && api.isMoveable(name)) { roots.add(name); return; }
-    for (const input of api.getCommandString(name, false).match(/[A-Za-z][A-Za-z0-9_]*/g) ?? []) if (input !== name) visit(input);
+    if (api.getObjectType(name) === "point" && api.isMoveable(name) && (api.isIndependent(name) || api.getVisible(name))) roots.add(name);
+    if (api.getObjectType(name) === "point" && api.isIndependent(name)) return;
+    for (const input of geometryNames(api.getCommandString(name, false))) if (input !== name) visit(input);
   };
   for (const check of checks) check.refs.forEach(visit);
   const snapshot = adapter.snapshot();

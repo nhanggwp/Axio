@@ -1,3 +1,4 @@
+import { geometryNames } from "../../shared/geometryNames";
 import type { GeometryObject } from "../../shared/actions";
 export function affectedByDeletion(objects: GeometryObject[], names: string[]) {
   const affected = new Set(names);
@@ -6,7 +7,7 @@ export function affectedByDeletion(objects: GeometryObject[], names: string[]) {
     changed = false;
     for (const o of objects) {
       if (affected.has(o.name)) continue;
-      const refs = o.definition.match(/[\p{L}][\p{L}\p{N}_]*/gu) ?? [];
+      const refs = geometryNames(o.definition);
       if (refs.some((r) => r !== o.name && affected.has(r))) {
         affected.add(o.name);
         changed = true;

@@ -41,13 +41,25 @@ test("applying returns to Move and real pointer drags preserve fixed lengths, al
   await page.getByRole("button", { name: "Áp dụng", exact: true }).click();
   expect(await page.evaluate(() => window.axio!.adapter.api.getMode())).toBe(0);
   const before = await page.evaluate(() => { const a = window.axio!.adapter.api; return { x: a.getXcoord("B"), y: a.getYcoord("B") }; });
+  await page.getByRole("button", { name: "Đóng bảng trợ lý AI" }).click();
+  await expect.poll(() => page.evaluate(() => document.querySelector(".EuclidianPanel")!.getBoundingClientRect().width)).toBeGreaterThan(900);
+  const widthBeforeDrag = await page.evaluate(() => document.querySelector(".workspace")!.getBoundingClientRect().width);
   const p = await position(page, "B");
-  await page.mouse.move(p.x, p.y); await page.mouse.down(); await page.mouse.move(p.x - 25, p.y - 55, { steps: 16 }); await page.mouse.up();
+  await page.mouse.move(p.x, p.y); await page.mouse.down();
+  expect(await page.evaluate(() => document.querySelector(".workspace")!.getBoundingClientRect().width)).toBe(widthBeforeDrag);
+  await page.mouse.move(p.x - 25, p.y - 55, { steps: 16 }); await page.mouse.up();
   await expect.poll(() => page.evaluate(() => window.axio!.adapter.api.getYcoord("B"))).not.toBeCloseTo(before.y);
   const inspect = () => page.evaluate(() => { const a = window.axio!.adapter.api; return { AB: a.getValue("AB"), AC: a.getValue("AC"), AH: a.getValue("AH"), By: a.getYcoord("B"), Cx: a.getXcoord("C"), circles: window.axio!.objects.filter((o) => o.type === "circle" && o.visible).length }; });
   const moved = await inspect();
   expect(moved.AB).toBeCloseTo(9); expect(moved.AC).toBeCloseTo(12); expect(moved.AH).toBeCloseTo(7.2); expect(moved.circles).toBe(0);
   expect(moved.Cx).not.toBeCloseTo(0);
+  const cPos = await position(page, "C");
+  await page.mouse.move(cPos.x, cPos.y); await page.mouse.down(); await page.mouse.move(cPos.x + 40, cPos.y + 20, { steps: 12 }); await page.mouse.up();
+  const movedViaC = await inspect();
+  expect(movedViaC.Cx).not.toBeCloseTo(moved.Cx);
+  expect(movedViaC.AB).toBeCloseTo(9); expect(movedViaC.AC).toBeCloseTo(12); expect(movedViaC.AH).toBeCloseTo(7.2);
+  await page.evaluate(() => window.axio!.undo());
+  expect((await inspect()).Cx).toBeCloseTo(moved.Cx);
   await page.evaluate(() => window.axio!.undo());
   expect((await inspect()).By).toBeCloseTo(before.y);
   await page.evaluate(() => window.axio!.redo());
@@ -75,4 +87,16 @@ test("a dilation of two free points cannot pretend to keep a given length during
   await ask(page, "Giữ AB bằng 9 và AC bằng 12 khi kéo điểm.");
   expect(requests).toHaveLength(2);
   expect(requests[1]).toMatchObject({ validation_feedback: { message: expect.stringContaining("Ràng buộc mất khi thử di chuyển") } });
+});
+
+test("legacy figures with hidden direction helpers still allow dragging A, B and C smoothly", async ({ page }) => {
+  await ready(page);
+  await page.route("**/api/assist", (route) => route.fulfill({ json: fixedRightTriangle }));
+  await ask(page, "Vẽ tam giác vuông.");
+  await page.getByRole("button", { name: "Áp dụng", exact: true }).click();
+  const bPos = await position(page, "B");
+  await page.mouse.move(bPos.x, bPos.y); await page.mouse.down(); await page.mouse.move(bPos.x, bPos.y - 50, { steps: 12 }); await page.mouse.up();
+  const afterB = await page.evaluate(() => { const a = window.axio!.adapter.api; return { By: a.getYcoord("B"), AB: a.getValue("AB"), AC: a.getValue("AC"), AH: a.getValue("AH") }; });
+  expect(Math.abs(afterB.By)).toBeGreaterThan(0.5);
+  expect(afterB.AB).toBeCloseTo(9); expect(afterB.AC).toBeCloseTo(12); expect(afterB.AH).toBeCloseTo(7.2);
 });

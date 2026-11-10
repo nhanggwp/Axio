@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { partialMessage, readEventStream } from "../../shared/eventStream";
 import { requestSchema, replySchema, type AgentProgress } from "../../shared/actions";
 import { runAgent } from "../../server/services/agent";
+import { fixedRightTriangle } from "../helpers/fixedTriangle";
+import { draggableTriangle } from "../helpers/draggableTriangle";
 import type { ServerConfig } from "../../server/config";
 const body = requestSchema.parse({ request: "Nó khác đường tròn kia thế nào?", selection: null, objects: [], conversation: [
   { role: "user", content: "Vẽ đường tròn nội tiếp." },
@@ -13,6 +15,17 @@ function provider(pieces: string[], done = true) {
   return new Response(pieces.map((content) => `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\r\n\r\n`).join("") + (done ? "data: [DONE]\r\n\r\n" : ""), { headers: { "Content-Type": "text/event-stream" } });
 }
 describe("streamed agent contract", () => {
+  it("rejects hidden free direction points that lock vertices and repairs to draggable point_on controls", async () => {
+    const emptyRequest = requestSchema.parse({ request: "Vẽ tam giác ABC vuông tại A, AB=9, AC=12, đường cao AH.", selection: null, objects: [], conversation: [] });
+    const fetch = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(provider([JSON.stringify(fixedRightTriangle)]))
+      .mockResolvedValueOnce(provider([JSON.stringify(draggableTriangle)]));
+    const result = await runAgent(emptyRequest, config, { onProgress: () => {} });
+    expect(result.actions).toEqual(draggableTriangle.actions);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const repaired = JSON.parse(fetch.mock.calls[1][1]!.body as string);
+    expect(JSON.parse(repaired.messages.at(-1).content).validation_feedback).toContain("point_on");
+  });
   it("can correct a mistaken dependency check for deliberately free root points", async () => {
     const previous = replySchema.parse({ status: "ready_to_preview", message: "Đề xuất điểm tự do.", checks: [{ kind: "dependent", refs: ["P"] }], actions: [{ type: "point", label: "P", x: 1, y: 2 }] });
     const request = requestSchema.parse({ ...body, validation_feedback: { message: "P đang là đối tượng tự do.", previous } });

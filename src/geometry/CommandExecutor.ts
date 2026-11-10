@@ -249,14 +249,24 @@ export function executeActions(
             throw new Error("Số đỉnh phải từ 3 đến 100.");
           if (a.kind === "circle_radius" && a.value <= 0)
             throw new Error("Bán kính phải lớn hơn 0.");
+          let scaleValue = a.value;
+          if (a.kind === "dilate" && a.refs.every((r) => api.getObjectType(r) === "point")) {
+            const r0 = Math.hypot(api.getXcoord(a.refs[0]) - api.getXcoord(a.refs[1]), api.getYcoord(a.refs[0]) - api.getYcoord(a.refs[1]));
+            const distCheck = checks.find((c) => c.kind === "distance" && ((c.refs[0] === a.label && c.refs[1] === a.refs[1]) || (c.refs[1] === a.label && c.refs[0] === a.refs[1])));
+            if (r0 > 1e-9 && distCheck && distCheck.kind === "distance" && Math.abs(a.value - distCheck.value / r0) < 1e-4) scaleValue = distCheck.value / r0;
+          }
           refs =
             a.kind === "rotate" || a.kind === "dilate"
               ? [
                   refs[0],
-                  String(a.value) + (a.kind === "rotate" ? "°" : ""),
+                  String(scaleValue) + (a.kind === "rotate" ? "°" : ""),
                   refs[1],
                 ]
-              : [...refs, String(a.value)];
+              : [...refs, String(scaleValue)];
+        }
+        if (a.kind === "angle" && refs.length === 3) {
+          const [p, v, q] = refs.map((name) => [api.getXcoord(name), api.getYcoord(name)]);
+          if ((p[0] - v[0]) * (q[1] - v[1]) - (p[1] - v[1]) * (q[0] - v[0]) < 0) refs = [refs[2], refs[1], refs[0]];
         }
         if (a.kind === "reflect")
           need(a.refs[1], ["point", "line", "segment", "ray", "circle"]);
@@ -276,7 +286,7 @@ export function executeActions(
                 const inputs = api
                   .getCommandString(name, false)
                   .match(
-                    /^Segment[\[(]([A-Za-z][A-Za-z0-9_]*),\s*([A-Za-z][A-Za-z0-9_]*),\s*([A-Za-z][A-Za-z0-9_]*)[\])]$/,
+                    /^Segment[\[(]([A-Za-z][A-Za-z0-9_]*'*),\s*([A-Za-z][A-Za-z0-9_]*'*),\s*([A-Za-z][A-Za-z0-9_]*'*)[\])]$/,
                   );
                 return (
                   inputs &&
@@ -286,11 +296,20 @@ export function executeActions(
               })
             : undefined;
         if (boundary) {
+          // Naming a requested polygon edge must preserve its primary role.
+          const inheritedRole = roles.get(boundary) ?? false;
+          roles.delete(boundary);
+          roles.set(a.label, inheritedRole && (a.auxiliary ?? true));
           if (!api.renameObject(boundary, a.label))
             throw new Error("Không thể đặt tên cạnh đa giác.");
         } else adapter.command(`${a.label}=${spec.command}(${refs.join(",")})`);
         // Point(path, parameter) fixes its parameter; initialize a movable path point instead.
         if (a.kind === "point_on" && a.position) api.setCoords(a.label, a.position.x, a.position.y);
+        if (a.kind === "length" && !a.auxiliary && api.getObjectType(a.refs[0]) === "segment") {
+          roles.set(a.refs[0], false);
+          visibility.set(a.refs[0], true);
+          api.setLabelVisible(a.refs[0], true);
+        }
       }
       if (a.type === "altitude") {
         need(a.vertex, ["point"]);
@@ -338,7 +357,7 @@ export function executeActions(
             `Phép dựng làm ${name} không xác định. Kiểm tra các điểm trùng nhau, thẳng hàng hoặc điều kiện mâu thuẫn.`,
           );
         if (!prior.has(name)) {
-          if ((a.type === "point" || a.type === "construct") && a.auxiliary !== undefined) roles.set(name, a.auxiliary);
+          if ((a.type === "point" || a.type === "construct") && a.auxiliary !== undefined && !roles.has(name)) roles.set(name, a.auxiliary);
           const type = api.getObjectType(name);
           api.setLabelVisible(name, type === "point" || type === "segment");
           api.setLineThickness(name, 2);

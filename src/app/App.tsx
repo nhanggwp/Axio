@@ -110,13 +110,14 @@ export default function App() {
     let selection = controller.selection;
     return controller.subscribe(() => {
       render((v) => v + 1);
+      if (controller.interacting) return;
       if (
         controller.selection &&
         controller.selection !== selection &&
         controller.mode === 0 &&
         !clarificationRef.current
       )
-        setRight("properties");
+        setRight((current) => (current ? "properties" : null));
       selection = controller.selection;
     });
   }, [controller]);

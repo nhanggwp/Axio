@@ -1,6 +1,6 @@
 import { z } from "zod";
 export const AGENT_TIMEOUT_MS = 120_000;
-export const labelSchema = z.string().regex(/^[A-Za-z][A-Za-z0-9_]{0,23}$/);
+export const labelSchema = z.string().max(24).regex(/^[A-Za-z][A-Za-z0-9_]*'{0,3}$/);
 export const geometryCheckSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("on_segment"), refs: z.tuple([labelSchema, labelSchema, labelSchema]) }).strict(),
   z.object({ kind: z.literal("equal_distance"), refs: z.tuple([labelSchema, labelSchema, labelSchema, labelSchema]) }).strict(),

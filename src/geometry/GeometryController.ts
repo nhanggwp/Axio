@@ -1,3 +1,4 @@
+import { geometryNames } from "../../shared/geometryNames";
 import { GeoGebraAdapter } from "./GeoGebraAdapter";
 import { ConstructionHistory } from "./ConstructionHistory";
 import { executeActions } from "./CommandExecutor";
@@ -33,6 +34,8 @@ export class GeometryController {
     x: number;
     y: number;
     moved: boolean;
+    proxy?: { anchor: string; driver: string; ax: number; ay: number; rDriver: number; deltaAngle: number } | null;
+    hiddenHelpers?: { name: string; dx: number; dy: number }[];
   } | null = null;
   constructor(readonly adapter: GeoGebraAdapter) {
     adapter.formatSegmentLabels();
@@ -52,6 +55,9 @@ export class GeometryController {
   }
   get interacting() {
     return this.dragging;
+  }
+  get hasProxyDrag() {
+    return !!this.pointer?.proxy;
   }
   get selectedNames() {
     return this.selections.names;
@@ -85,6 +91,10 @@ export class GeometryController {
   };
   private changed = () => {
     if (this.paused || this.disposed) return;
+    if (this.pointer?.hiddenHelpers?.length && this.pointer.hit && this.adapter.api.exists(this.pointer.hit)) {
+      const api = this.adapter.api, ax = api.getXcoord(this.pointer.hit), ay = api.getYcoord(this.pointer.hit);
+      for (const h of this.pointer.hiddenHelpers) if (api.exists(h.name) && Math.hypot(api.getXcoord(h.name) - (ax + h.dx), api.getYcoord(h.name) - (ay + h.dy)) > 1e-7) api.setCoords(h.name, ax + h.dx, ay + h.dy);
+    }
     cancelAnimationFrame(this.frame);
     this.frame = requestAnimationFrame(this.sync);
     clearTimeout(this.timer);
@@ -127,7 +137,38 @@ export class GeometryController {
     );
     this.changed();
   };
+  private isDirectPoint(name: string) {
+    const api = this.adapter.api;
+    return api.exists(name) && api.getObjectType(name) === "point" && api.isMoveable(name) && (api.isIndependent(name) || /^(Point|Điểm)[\[(]/i.test(api.getCommandString(name, false)));
+  }
+  private resolveProxy(hit: string) {
+    const api = this.adapter.api;
+    if (!api.exists(hit) || api.getObjectType(hit) !== "point" || this.isDirectPoint(hit)) return null;
+    const visibleRoots: string[] = [], drivers: string[] = [], visited = new Set<string>();
+    const visit = (target: string) => {
+      if (visited.has(target) || !api.exists(target)) return;
+      visited.add(target);
+      if (this.isDirectPoint(target)) {
+        if (api.isIndependent(target) && api.getVisible(target)) visibleRoots.push(target);
+        else drivers.push(target);
+        if (api.isIndependent(target)) return;
+      }
+      for (const input of geometryNames(api.getCommandString(target, false))) if (input !== target) visit(input);
+    };
+    visit(hit);
+    if (visibleRoots.length !== 1 || drivers.length !== 1) return null;
+    const anchor = visibleRoots[0], driver = drivers[0];
+    const ax = api.getXcoord(anchor), ay = api.getYcoord(anchor), dx = api.getXcoord(driver), dy = api.getYcoord(driver), hx = api.getXcoord(hit), hy = api.getYcoord(hit);
+    const rDriver = Math.hypot(dx - ax, dy - ay), rHit = Math.hypot(hx - ax, hy - ay);
+    if (rDriver <= 1e-6 || rHit <= 1e-6) return null;
+    return { anchor, driver, ax, ay, rDriver, deltaAngle: Math.atan2(dy - ay, dx - ax) - Math.atan2(hy - ay, hx - ax) };
+  }
   beginPointer(modified: boolean, hit: string | null, x: number, y: number) {
+    const api = this.adapter.api;
+    const proxy = this.mode === 0 && !modified && hit ? this.resolveProxy(hit) : null;
+    const hiddenHelpers = this.mode === 0 && !modified && hit && api.exists(hit) && api.getObjectType(hit) === "point" && api.isIndependent(hit) && api.isMoveable(hit)
+      ? api.getAllObjectNames("point").filter((n) => n !== hit && api.isIndependent(n) && api.isMoveable(n) && !api.getVisible(n)).map((name) => ({ name, dx: api.getXcoord(name) - api.getXcoord(hit), dy: api.getYcoord(name) - api.getYcoord(hit) }))
+      : [];
     this.pointer = {
       modified,
       before: [...this.selectedNames],
@@ -135,15 +176,32 @@ export class GeometryController {
       x,
       y,
       moved: false,
+      proxy,
+      hiddenHelpers,
     };
     this.dragging = true;
+    if (this.mode === 0 && hit && api.exists(hit) && api.getObjectType(hit) === "point") {
+      if (!this.isDirectPoint(hit) && !proxy) {
+        const controls = this.controlPoints(hit);
+        this.drawingFeedback = controls.length ? `${hit} phụ thuộc phép dựng · kéo ${controls.join(" hoặc ")} để chỉnh hình.` : `${hit} không di chuyển trực tiếp được. Xem quan hệ trong Thuộc tính.`;
+      } else if (this.drawingFeedback) this.drawingFeedback = "";
+      this.emit();
+    }
   }
-  movePointer(x: number, y: number) {
-    if (this.pointer && Math.hypot(x - this.pointer.x, y - this.pointer.y) > 4)
-      this.pointer.moved = true;
+  movePointer(x: number, y: number, host?: HTMLElement | null) {
+    if (!this.pointer || Math.hypot(x - this.pointer.x, y - this.pointer.y) <= 4) return;
+    this.pointer.moved = true;
+    const proxy = this.pointer.proxy;
+    if (proxy && host) {
+      const api = this.adapter.api, v = JSON.parse(api.getViewProperties(1)), rect = (host.querySelector(".EuclidianPanel") ?? host).getBoundingClientRect();
+      const wx = v.xMin + (x - rect.left) * v.invXscale, wy = v.yMin + (v.height - (y - rect.top)) * v.invYscale;
+      const angle = Math.atan2(wy - proxy.ay, wx - proxy.ax) + proxy.deltaAngle;
+      api.setCoords(proxy.driver, proxy.ax + proxy.rDriver * Math.cos(angle), proxy.ay + proxy.rDriver * Math.sin(angle));
+    }
   }
   endPointer() {
     const p = this.pointer;
+    if (!p) return;
     this.dragging = false;
     this.pointer = null;
     if (this.mode === 0 && p?.modified && p.hit && !p.moved)
@@ -152,12 +210,14 @@ export class GeometryController {
           ? p.before.filter((n) => n !== p.hit)
           : [...p.before, p.hit],
       );
-    this.flush();
+    else if (this.mode === 0 && p?.proxy && p.hit && !p.moved && !p.modified)
+      this.select(p.hit);
     this.sync();
+    this.flush();
   }
   private clicked = (name: string) => {
     if (this.pointer) this.pointer.hit ??= name;
-    if (this.mode === 0 && this.adapter.api.getObjectType(name) === "point" && !this.adapter.api.isMoveable(name)) {
+    if (this.mode === 0 && this.adapter.api.getObjectType(name) === "point" && !this.isDirectPoint(name) && !this.resolveProxy(name)) {
       const controls = this.controlPoints(name);
       this.drawingFeedback = controls.length ? `${name} phụ thuộc phép dựng · kéo ${controls.join(" hoặc ")} để chỉnh hình.` : `${name} không di chuyển trực tiếp được. Xem quan hệ trong Thuộc tính.`;
       this.emit();
@@ -187,10 +247,10 @@ export class GeometryController {
       if (e.type === "updateStyle") this.changed();
       else this.emit();
     }
-    if (e.type === "dragEnd" || e.type === "movedGeos") {
+    if ((e.type === "dragEnd" || e.type === "movedGeos") && !this.pointer) {
       this.dragging = false;
-      this.flush();
       this.sync();
+      this.flush();
     }
     if (this.synchronizingSelection) return;
     if (e.type === "select" && e.target) {
@@ -216,7 +276,7 @@ export class GeometryController {
       this.synchronizingSelection = true;
       try {
         const safe = this.selectedNames.filter((n) =>
-          /^[\p{L}][\p{L}\p{N}_]*$/u.test(n),
+          /^[\p{L}][\p{L}\p{N}_]*'*$/u.test(n),
         );
         this.adapter.api.evalCommand(`SelectObjects(${safe.join(",")})`);
       } finally {
@@ -237,8 +297,8 @@ export class GeometryController {
     const visit = (target: string) => {
       if (visited.has(target) || !api.exists(target)) return;
       visited.add(target);
-      if (api.getObjectType(target) === "point" && api.isMoveable(target) && api.getVisible(target)) { found.add(target); return; }
-      for (const input of api.getCommandString(target, false).match(/[A-Za-z][A-Za-z0-9_]*/g) ?? []) if (input !== target) visit(input);
+      if (this.isDirectPoint(target) && api.getVisible(target)) { found.add(target); if (api.isIndependent(target)) return; }
+      for (const input of geometryNames(api.getCommandString(target, false))) if (input !== target) visit(input);
     };
     visit(name);
     return [...found].slice(0, 6);
@@ -363,13 +423,16 @@ export class GeometryController {
     if (xml) this.loadHistory(xml);
   }
   private loadHistory(xml: string) {
+    clearTimeout(this.timer);
     this.paused = true;
     try {
       this.adapter.restore(xml);
+      this.select(null);
     } finally {
       this.paused = false;
-      this.select(null);
+      clearTimeout(this.timer);
       this.sync();
+      this.history.replaceCurrent(this.adapter.snapshot());
     }
   }
   get dirty() {

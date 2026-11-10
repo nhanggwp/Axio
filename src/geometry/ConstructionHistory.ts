@@ -9,6 +9,7 @@ export class ConstructionHistory {
   }
   capture(): HistorySnapshot { return { states: [...this.states], index: this.index }; }
   restore(snapshot: HistorySnapshot) { this.states = [...snapshot.states]; this.index = snapshot.index; }
+  replaceCurrent(xml: string) { if (this.index >= 0 && this.index < this.states.length) this.states[this.index] = xml; }
   push(xml: string) {
     if (constructionKey(this.states[this.index] ?? "") === constructionKey(xml))
       return;

@@ -1,3 +1,4 @@
+import { geometryNames } from "../../shared/geometryNames";
 import { supportsStroke } from "../geometry/GeometryState";
 import { useState } from "react";
 import type { GeometryController } from "../geometry/GeometryController";
@@ -28,7 +29,7 @@ export function PropertyInspector({
   };
   const dependents = controller.objects
     .filter((d) =>
-      d.definition.match(/[A-Za-z][A-Za-z0-9_]*/g)?.includes(o.name),
+      geometryNames(d.definition).includes(o.name),
     )
     .map((d) => d.name);
   return (
@@ -52,7 +53,7 @@ export function PropertyInspector({
             change(() => {
               if (!labelSchema.safeParse(rename).success)
                 throw new Error(
-                  "Tên bắt đầu bằng chữ cái, chỉ gồm chữ cái, chữ số và dấu gạch dưới; tối đa 24 ký tự.",
+                  "Tên bắt đầu bằng chữ cái, gồm chữ cái, chữ số, dấu gạch dưới và tối đa ba dấu phẩy trên ở cuối; tối đa 24 ký tự.",
                 );
               if (
                 controller.adapter.api.exists(rename) ||

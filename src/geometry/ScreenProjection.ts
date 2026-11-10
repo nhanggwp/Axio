@@ -1,3 +1,4 @@
+import { geometryNames } from "../../shared/geometryNames";
 import type { GeometryController } from "./GeometryController";
 export type ScreenPoint = { x: number; y: number };
 export type ScreenBounds = {
@@ -61,7 +62,7 @@ export function screenShapes(
     if (!o.visible || !api.isDefined(o.name)) continue;
     const el = elements.get(o.name);
     if (!el) continue;
-    const refs = (o.definition.match(/[\p{L}][\p{L}\p{N}_]*/gu) ?? [])
+    const refs = (geometryNames(o.definition))
       .slice(1)
       .filter((n) => api.exists(n));
     const pointRefs = refs.filter((n) => api.getObjectType(n) === "point");
@@ -166,7 +167,7 @@ export function hitObject(shapes: Shape[], p: ScreenPoint) {
     .sort((a, b) => Number(b.kind === "point") - Number(a.kind === "point"))) {
     if (
       s.kind === "point" &&
-      Math.hypot(p.x - s.points[0].x, p.y - s.points[0].y) <= 10
+      Math.hypot(p.x - s.points[0].x, p.y - s.points[0].y) <= 16
     )
       return s.name;
     if (

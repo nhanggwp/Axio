@@ -67,6 +67,12 @@ export function SelectionInteractions({
       setMenu(null);
       setPopover(false);
       if (controller.mode !== 0) return;
+      if (controller.hasProxyDrag) {
+        e.preventDefault();
+        e.stopPropagation();
+        node.setPointerCapture(e.pointerId);
+        return;
+      }
       if (hit) return;
       e.preventDefault();
       e.stopPropagation();
@@ -79,7 +85,12 @@ export function SelectionInteractions({
       node.setPointerCapture(e.pointerId);
     };
     const move = (e: PointerEvent) => {
-      controller.movePointer(e.clientX, e.clientY);
+      controller.movePointer(e.clientX, e.clientY, node);
+      if (controller.hasProxyDrag) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       const p = start.current;
       if (!p) return;
       e.preventDefault();
@@ -110,8 +121,14 @@ export function SelectionInteractions({
         } else if (!p.extend) controller.select(null);
         start.current = null;
         setBox(null);
-        if (node.hasPointerCapture(e.pointerId))
-          node.releasePointerCapture(e.pointerId);
+      }
+      if (node.hasPointerCapture(e.pointerId))
+        node.releasePointerCapture(e.pointerId);
+      if (controller.hasProxyDrag) {
+        e.preventDefault();
+        e.stopPropagation();
+        controller.endPointer();
+        return;
       }
       setTimeout(() => controller.endPointer(), 0);
     };
