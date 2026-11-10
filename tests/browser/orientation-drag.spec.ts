@@ -100,3 +100,50 @@ test("legacy figures with hidden direction helpers still allow dragging A, B and
   expect(Math.abs(afterB.By)).toBeGreaterThan(0.5);
   expect(afterB.AB).toBeCloseTo(9); expect(afterB.AC).toBeCloseTo(12); expect(afterB.AH).toBeCloseTo(7.2);
 });
+
+test("polygon presets, auto-synthesized polygons and draw.io resize/rotate handles scale and rotate figures", async ({ page }) => {
+  await ready(page);
+  await page.getByRole("button", { name: "ĐA GIÁC", exact: true }).click();
+  await page.getByRole("button", { name: "Hình chữ nhật", exact: true }).click();
+  await expect(page.getByTestId("transform-box")).toBeVisible();
+  const rectBefore = await page.evaluate(() => {
+    const c = window.axio!, api = c.adapter.api;
+    const poly = c.objects.find((o) => o.type === "quadrilateral" || o.type === "polygon")!;
+    return {
+      name: poly.name,
+      displayName: poly.displayName,
+      vertices: poly.vertices,
+      area: api.getValue(poly.name),
+    };
+  });
+  expect(rectBefore.vertices).toHaveLength(4);
+  expect(rectBefore.displayName).toBe("ABCD");
+  const seHandle = await page.getByRole("button", { name: "Co giãn góc dưới phải" }).boundingBox();
+  await page.mouse.move(seHandle!.x + seHandle!.width / 2, seHandle!.y + seHandle!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(seHandle!.x + 60, seHandle!.y + 45, { steps: 10 });
+  await page.mouse.up();
+  const rectAfterScale = await page.evaluate((name) => window.axio!.adapter.api.getValue(name), rectBefore.name);
+  expect(rectAfterScale).toBeGreaterThan(rectBefore.area * 1.15);
+
+  await page.evaluate(() => window.axio!.newDocument());
+  await page.getByRole("button", { name: "Ẩn / hiện trợ lý AI", exact: true }).click();
+  await page.route("**/api/assist", (route) => route.fulfill({ json: draggableTriangle }));
+  await ask(page, "Vẽ tam giác vuông.");
+  await page.getByRole("button", { name: "Áp dụng", exact: true }).click();
+  const synthPoly = await page.evaluate(() => window.axio!.objects.find((o) => o.type === "triangle" || o.type === "polygon"));
+  expect(synthPoly?.displayName).toBe("ABC");
+  await page.evaluate((name) => window.axio!.select(name), synthPoly!.name);
+  await expect(page.getByTestId("transform-box")).toBeVisible();
+  const triSe = await page.getByRole("button", { name: "Co giãn góc dưới phải" }).boundingBox();
+  await page.mouse.move(triSe!.x + triSe!.width / 2, triSe!.y + triSe!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(triSe!.x + 70, triSe!.y + 70, { steps: 12 });
+  await page.mouse.up();
+  const scaledTri = await page.evaluate(() => {
+    const a = window.axio!.adapter.api;
+    return { AB: a.getValue("AB"), AC: a.getValue("AC") };
+  });
+  expect(scaledTri.AB).toBeGreaterThan(9.5);
+  expect(scaledTri.AC / scaledTri.AB).toBeCloseTo(12 / 9, 2);
+});

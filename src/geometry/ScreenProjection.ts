@@ -1,5 +1,6 @@
 import { geometryNames } from "../../shared/geometryNames";
 import type { GeometryController } from "./GeometryController";
+import { isPolygonType } from "./triangleVertices";
 export type ScreenPoint = { x: number; y: number };
 export type ScreenBounds = {
   left: number;
@@ -34,6 +35,21 @@ const distance = (p: ScreenPoint, a: ScreenPoint, b: ScreenPoint) => {
     );
   return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
 };
+function pointInPolygon(p: ScreenPoint, poly: ScreenPoint[]): boolean {
+  if (poly.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x,
+      yi = poly[i].y,
+      xj = poly[j].x,
+      yj = poly[j].y;
+    const intersect =
+      yi > p.y !== yj > p.y &&
+      p.x < ((xj - xi) * (p.y - yi)) / (yj - yi || 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
 /** UI hit-testing only. Mathematical objects/coordinates come from GeoGebra. */
 export function screenShapes(
   controller: GeometryController,
@@ -62,7 +78,7 @@ export function screenShapes(
     if (!o.visible || !api.isDefined(o.name)) continue;
     const el = elements.get(o.name);
     if (!el) continue;
-    const refs = (geometryNames(o.definition))
+    const refs = geometryNames(o.definition)
       .slice(1)
       .filter((n) => api.exists(n));
     const pointRefs = refs.filter((n) => api.getObjectType(n) === "point");
@@ -73,11 +89,7 @@ export function screenShapes(
       kind = "point";
     } else if (["segment", "vector"].includes(o.type) && pointRefs.length >= 2)
       points = pointRefs.slice(0, 2).map(point);
-    else if (
-      ["polygon", "triangle", "quadrilateral", "pentagon", "hexagon"].includes(
-        o.type,
-      )
-    ) {
+    else if (isPolygonType(o.type)) {
       points = pointRefs.map(point);
       for (const command of doc.querySelectorAll("construction > command")) {
         const output = command.querySelector("output");
@@ -188,6 +200,9 @@ export function hitObject(shapes: Shape[], p: ScreenPoint) {
       distance(p, s.points.at(-1)!, s.points[0]) < 7
     )
       return s.name;
+  }
+  for (const s of [...shapes].reverse()) {
+    if (s.kind === "polygon" && pointInPolygon(p, s.points)) return s.name;
   }
   return null;
 }

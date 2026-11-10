@@ -1,11 +1,12 @@
 import { useState } from "react";
 import type { GeometryController } from "../geometry/GeometryController";
+import { POLYGON_TYPES } from "../geometry/triangleVertices";
 import type { GeometryObject } from "../../shared/actions";
 import { IconButton } from "./Icon";
 const categories = [
   ["ĐIỂM", ["point"]],
   ["ĐƯỜNG & ĐOẠN THẲNG", ["line", "segment", "ray", "vector"]],
-  ["ĐA GIÁC", ["polygon", "triangle", "quadrilateral", "pentagon", "hexagon"]],
+  ["ĐA GIÁC", POLYGON_TYPES],
   ["ĐƯỜNG TRÒN", ["circle", "conic", "conicpart"]],
   ["SỐ ĐO", ["numeric", "angle", "text"]],
 ] as const;

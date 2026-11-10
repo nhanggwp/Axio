@@ -168,7 +168,7 @@ export const objectSchema = z.object({
   labelVisible: z.boolean().optional(),
   thickness: z.number().optional(),
   lineStyle: z.number().optional(),
-  vertices: z.array(z.string().max(64)).length(3).optional(),
+  vertices: z.array(z.string().max(64)).min(3).max(100).optional(),
   x: z.number().nullable().optional(),
   y: z.number().nullable().optional(),
 });

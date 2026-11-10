@@ -1,9 +1,10 @@
 import { supportsStroke } from "./GeometryState";
-import { actionSchema, type GeometryAction, type GeometryCheck } from "../../shared/actions";
+import { actionSchema, labelSchema, type GeometryAction, type GeometryCheck } from "../../shared/actions";
 import { validateGeometry } from "./GeometryChecks";
 import { GeoGebraAdapter } from "./GeoGebraAdapter";
-import { triangleVertices } from "./triangleVertices";
+import { isPolygonType, POLYGON_TYPES, polygonVertices, triangleVertices } from "./triangleVertices";
 const triangleCenters: Record<string, number> = { incenter: 1, centroid: 2, circumcenter: 3, orthocenter: 4 };
+const polygonCounts = Array.from({ length: 98 }, (_, i) => i + 3);
 const specifications: Record<
   string,
   { command: string; counts: number[]; types?: string[][]; result: string }
@@ -29,7 +30,7 @@ const specifications: Record<
   },
   polygon: {
     command: "Polygon",
-    counts: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+    counts: polygonCounts,
     types: [["point"]],
     result: "polygon",
   },
@@ -118,17 +119,7 @@ const specifications: Record<
   area: {
     command: "Area",
     counts: [1],
-    types: [
-      [
-        "polygon",
-        "triangle",
-        "quadrilateral",
-        "pentagon",
-        "hexagon",
-        "circle",
-        "conic",
-      ],
-    ],
+    types: [[...POLYGON_TYPES, "circle", "conic"]],
     result: "numeric",
   },
   reflect: { command: "Reflect", counts: [2], result: "unknown" },
@@ -142,6 +133,136 @@ const specifications: Record<
     result: "vector",
   },
 };
+
+function segmentEndpoints(api: GeoGebraAdapter["api"], name: string): [string, string] | null {
+  if (api.getObjectType(name) !== "segment") return null;
+  const match = api.getCommandString(name, false).match(/^Segment[\[(]\s*([^,\s]+)\s*,\s*([^,\]\)\s]+)/);
+  if (!match) return null;
+  const [u, v] = [match[1], match[2]];
+  if (!api.exists(u) || !api.exists(v) || api.getObjectType(u) !== "point" || api.getObjectType(v) !== "point") return null;
+  return [u, v];
+}
+
+function synthesizePolygonsFromSegments(
+  adapter: GeoGebraAdapter,
+  initialNames: Set<string>,
+  roles: Map<string, boolean>,
+) {
+  const api = adapter.api;
+  const adj = new Map<string, Set<string>>();
+  for (const name of api.getAllObjectNames("segment")) {
+    if (initialNames.has(name) || roles.get(name) === true) continue;
+    const ends = segmentEndpoints(api, name);
+    if (!ends) continue;
+    const [u, v] = ends;
+    if (!adj.has(u)) adj.set(u, new Set());
+    if (!adj.has(v)) adj.set(v, new Set());
+    adj.get(u)!.add(v);
+    adj.get(v)!.add(u);
+  }
+  let pruned = true;
+  while (pruned) {
+    pruned = false;
+    for (const [node, neighbors] of [...adj.entries()]) {
+      if (neighbors.size < 2) {
+        for (const nb of neighbors) adj.get(nb)?.delete(node);
+        adj.delete(node);
+        pruned = true;
+      }
+    }
+  }
+  if (adj.size < 3) return;
+  const existingPolygons = api
+    .getAllObjectNames()
+    .filter((name) => isPolygonType(api.getObjectType(name)))
+    .map((name) => {
+      try {
+        return new Set(polygonVertices(api, name));
+      } catch {
+        return new Set<string>();
+      }
+    });
+  const visited = new Set<string>();
+  for (const start of adj.keys()) {
+    if (visited.has(start)) continue;
+    const comp: string[] = [];
+    const queue = [start];
+    visited.add(start);
+    while (queue.length) {
+      const curr = queue.shift()!;
+      comp.push(curr);
+      for (const nb of adj.get(curr) ?? []) {
+        if (!visited.has(nb) && adj.has(nb)) {
+          visited.add(nb);
+          queue.push(nb);
+        }
+      }
+    }
+    if (comp.length < 3 || comp.length > 13) continue;
+    let candidates = comp;
+    if (comp.length >= 4) {
+      const hub = comp.find((u) => (adj.get(u)?.size ?? 0) === comp.length - 1);
+      if (hub && comp.filter((u) => u !== hub).every((u) => (adj.get(u)?.size ?? 0) === 3)) {
+        candidates = comp.filter((u) => u !== hub);
+      }
+    }
+    let cycle: string[] = [];
+    if (candidates.every((u) => {
+      const deg = [...(adj.get(u) ?? [])].filter((v) => candidates.includes(v)).length;
+      return deg === 2;
+    })) {
+      const set = new Set(candidates);
+      const ordered = [candidates[0]];
+      const seen = new Set([candidates[0]]);
+      while (ordered.length < candidates.length) {
+        const last = ordered.at(-1)!;
+        const next = [...(adj.get(last) ?? [])].find((v) => set.has(v) && !seen.has(v));
+        if (!next) break;
+        ordered.push(next);
+        seen.add(next);
+      }
+      if (ordered.length === candidates.length && adj.get(ordered.at(-1)!)?.has(ordered[0])) {
+        cycle = ordered;
+      }
+    } else if (candidates.length >= 3 && candidates.length <= 12) {
+      const cx = candidates.reduce((s, u) => s + api.getXcoord(u), 0) / candidates.length;
+      const cy = candidates.reduce((s, u) => s + api.getYcoord(u), 0) / candidates.length;
+      const sorted = [...candidates].sort(
+        (u, v) => Math.atan2(api.getYcoord(u) - cy, api.getXcoord(u) - cx) - Math.atan2(api.getYcoord(v) - cy, api.getXcoord(v) - cx),
+      );
+      if (sorted.every((u, i) => adj.get(u)?.has(sorted[(i + 1) % sorted.length]))) {
+        cycle = sorted;
+      }
+    }
+    if (cycle.length < 3 || cycle.length > 12) continue;
+    const hasPolygon = existingPolygons.some(
+      (polySet) => polySet.size === cycle.length && cycle.every((v) => polySet.has(v)),
+    );
+    if (hasPolygon) continue;
+    const joined = cycle.join("");
+    let polyLabel = labelSchema.safeParse(joined).success && !api.exists(joined) ? joined : "";
+    if (!polyLabel) {
+      let idx = 1;
+      while (api.exists(`poly${idx}`)) idx++;
+      polyLabel = `poly${idx}`;
+    }
+    const beforePoly = new Set(api.getAllObjectNames());
+    adapter.command(`${polyLabel}=Polygon(${cycle.join(",")})`);
+    roles.set(polyLabel, false);
+    adapter.color(polyLabel, "#C9E1E6");
+    api.setFilling(polyLabel, 0.18);
+    api.setLineThickness(polyLabel, 2);
+    api.setLabelVisible(polyLabel, false);
+    for (const created of api.getAllObjectNames()) {
+      if (!beforePoly.has(created) && created !== polyLabel) {
+        roles.set(created, true);
+        api.setLabelVisible(created, false);
+      }
+    }
+    existingPolygons.push(new Set(cycle));
+  }
+}
+
 export function executeActions(
   adapter: GeoGebraAdapter,
   actions: GeometryAction[],
@@ -177,7 +298,7 @@ export function executeActions(
           (["circle", "circumcircle", "incircle", ...Object.keys(triangleCenters)].includes(a.kind)) &&
           a.refs.length === 1 &&
           api.exists(a.refs[0]) &&
-          ["triangle", "polygon"].includes(api.getObjectType(a.refs[0]))
+          isPolygonType(api.getObjectType(a.refs[0]))
         ) {
           a.refs = triangleVertices(api, a.refs[0]);
           if (a.kind === "circle") a.kind = "circumcircle";
@@ -361,15 +482,7 @@ export function executeActions(
           const type = api.getObjectType(name);
           api.setLabelVisible(name, type === "point" || type === "segment");
           api.setLineThickness(name, 2);
-          if (
-            [
-              "polygon",
-              "triangle",
-              "quadrilateral",
-              "pentagon",
-              "hexagon",
-            ].includes(type)
-          ) {
+          if (isPolygonType(type)) {
             adapter.color(name, "#C9E1E6");
             api.setFilling(name, 0.18);
           } else if (a.type !== "altitude") adapter.color(name, "#23232D");
@@ -378,6 +491,7 @@ export function executeActions(
       }
       if (a.type === "style" && a.visible !== undefined) visibility.set(a.target, a.visible);
     }
+    synthesizePolygonsFromSegments(adapter, initialNames, roles);
     for (const [name, auxiliary] of roles) if (api.exists(name)) {
       api.setAuxiliary(name, auxiliary);
       if (auxiliary && visibility.get(name) !== true) api.setVisible(name, false);

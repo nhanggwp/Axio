@@ -3,6 +3,7 @@ import { GeometryCanvas } from "../components/GeometryCanvas";
 import { GeometryController } from "../geometry/GeometryController";
 import { GeoGebraAdapter } from "../geometry/GeoGebraAdapter";
 import { executeActions } from "../geometry/CommandExecutor";
+import { insertPolygonPreset } from "../geometry/polygonPresets";
 import { validateDynamicGeometry } from "../geometry/GeometryChecks";
 import { Toolbar } from "../components/Toolbar";
 import { ObjectExplorer } from "../components/ObjectExplorer";
@@ -325,6 +326,16 @@ export default function App() {
             controller?.setMode(id);
             setMode(id);
             setHint(`${label} · ${h}`);
+          }}
+          onPreset={(presetId, _label, h) => {
+            if (!controller) return;
+            try {
+              insertPolygonPreset(controller, presetId);
+              setMode(0);
+              setHint(h);
+            } catch (e) {
+              report(e);
+            }
           }}
         />
         {explorer && (

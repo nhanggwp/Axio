@@ -2,6 +2,17 @@ import { supportsStroke } from "../geometry/GeometryState";
 import type { GeometryController } from "../geometry/GeometryController";
 import { IconButton } from "./Icon";
 import { StrokeWidthSelect } from "./StrokeWidthSelect";
+
+const SWATCH_COLORS = [
+  "#23232D",
+  "#4F18E9",
+  "#09EFF8",
+  "#E31665",
+  "#10B981",
+  "#F59E0B",
+  "#8B5CF6",
+] as const;
+
 export function BatchInspector({
   controller,
   onClose,
@@ -33,7 +44,7 @@ export function BatchInspector({
       <p>{selected.map((o) => o.displayName ?? o.name).join(" · ")}</p>
       <div className="color-picker">
         <span>Nét vẽ</span>
-        {["#23232D", "#4F18E9", "#09EFF8", "#E31665"].map((color) => (
+        {SWATCH_COLORS.map((color) => (
           <button
             key={color}
             style={{ background: color }}
@@ -51,6 +62,23 @@ export function BatchInspector({
             }
           />
         ))}
+        <input
+          type="color"
+          aria-label="Màu chung tùy chỉnh"
+          defaultValue={selected[0]?.color || "#23232D"}
+          onChange={(e) => {
+            const color = e.target.value.toUpperCase();
+            change(() =>
+              controller.apply(
+                selected.map((o) => ({
+                  type: "style",
+                  target: o.name,
+                  color,
+                })),
+              ),
+            );
+          }}
+        />
       </div>
       <label className="field">
         Độ dày

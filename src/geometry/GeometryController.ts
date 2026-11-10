@@ -5,7 +5,15 @@ import { executeActions } from "./CommandExecutor";
 import { validateGeometry } from "./GeometryChecks";
 import { constructionKey, normalizeClientEvent } from "./GeometryState";
 import { SelectionManager, affectedByDeletion } from "./SelectionManager";
+import { selectionBounds } from "./ScreenProjection";
+import { isPolygonType } from "./triangleVertices";
 import type { GeometryAction, GeometryObject, GeometryCheck } from "../../shared/actions";
+
+export type TransformHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "rotate";
+
+type PointSnapshot = { name: string; x0: number; y0: number };
+type CircleSnapshot = { name: string; center: string; r0: number };
+
 export class GeometryController {
   readonly history = new ConstructionHistory();
   readonly selections = new SelectionManager();
@@ -33,9 +41,27 @@ export class GeometryController {
     hit: string | null;
     x: number;
     y: number;
+    wx0: number;
+    wy0: number;
     moved: boolean;
-    proxy?: { anchor: string; driver: string; ax: number; ay: number; rDriver: number; deltaAngle: number } | null;
+    proxy?:
+      | { kind: "rotate_driver"; anchor: string; driver: string; ax: number; ay: number; rDriver: number; deltaAngle: number }
+      | { kind: "translate_group"; freePoints: PointSnapshot[]; pathPoints: PointSnapshot[] }
+      | null;
     hiddenHelpers?: { name: string; dx: number; dy: number }[];
+  } | null = null;
+  private transformState: {
+    handle: TransformHandle;
+    wx0: number;
+    wy0: number;
+    wxMin: number;
+    wxMax: number;
+    wyMin: number;
+    wyMax: number;
+    freePoints: PointSnapshot[];
+    pathPoints: PointSnapshot[];
+    fixedCircles: CircleSnapshot[];
+    hasRigidConstraint: boolean;
   } | null = null;
   constructor(readonly adapter: GeoGebraAdapter) {
     adapter.formatSegmentLabels();
@@ -57,7 +83,7 @@ export class GeometryController {
     return this.dragging;
   }
   get hasProxyDrag() {
-    return !!this.pointer?.proxy;
+    return !!this.pointer?.proxy || !!this.transformState;
   }
   get selectedNames() {
     return this.selections.names;
@@ -107,13 +133,7 @@ export class GeometryController {
     if (this.paused || this.disposed) return;
     const a = this.adapter.api,
       type = a.getObjectType(name),
-      polygon = [
-        "polygon",
-        "triangle",
-        "quadrilateral",
-        "pentagon",
-        "hexagon",
-      ].includes(type);
+      polygon = isPolygonType(type);
     this.adapter.color(name, polygon ? "#C9E1E6" : "#23232D");
     a.setLineThickness(name, 2);
     if (polygon) a.setFilling(name, 0.18);
@@ -141,40 +161,146 @@ export class GeometryController {
     const api = this.adapter.api;
     return api.exists(name) && api.getObjectType(name) === "point" && api.isMoveable(name) && (api.isIndependent(name) || /^(Point|Điểm)[\[(]/i.test(api.getCommandString(name, false)));
   }
+  private screenToWorld(clientX: number, clientY: number, host?: HTMLElement | null) {
+    const api = this.adapter.api;
+    const v = JSON.parse(api.getViewProperties(1)) as {
+      xMin: number;
+      yMin: number;
+      width: number;
+      height: number;
+      invXscale: number;
+      invYscale: number;
+    };
+    const rect = (host?.querySelector(".EuclidianPanel") ?? host)?.getBoundingClientRect() ?? { left: 0, top: 0 };
+    return {
+      wx: v.xMin + (clientX - rect.left) * v.invXscale,
+      wy: v.yMin + (v.height - (clientY - rect.top)) * v.invYscale,
+    };
+  }
+  private connectedComponent(seeds: string[]): Set<string> {
+    const api = this.adapter.api;
+    const allNames = api.getAllObjectNames();
+    const adj = new Map<string, Set<string>>();
+    for (const name of allNames) adj.set(name, new Set());
+    for (const name of allNames) {
+      const cmd = api.getCommandString(name, false);
+      for (const ref of geometryNames(cmd)) {
+        if (ref !== name && adj.has(ref)) {
+          adj.get(name)!.add(ref);
+          adj.get(ref)!.add(name);
+        }
+      }
+    }
+    const visited = new Set<string>();
+    const queue = seeds.filter((s) => adj.has(s));
+    for (const s of queue) visited.add(s);
+    while (queue.length) {
+      const curr = queue.shift()!;
+      for (const nb of adj.get(curr) ?? []) {
+        if (!visited.has(nb)) {
+          visited.add(nb);
+          queue.push(nb);
+        }
+      }
+    }
+    return visited;
+  }
+  private collectGroupSnapshots(names: Iterable<string>) {
+    const api = this.adapter.api;
+    const freePoints: PointSnapshot[] = [];
+    const pathPoints: PointSnapshot[] = [];
+    const fixedCircles: CircleSnapshot[] = [];
+    let hasRigidConstraint = false;
+    for (const name of names) {
+      if (!api.exists(name)) continue;
+      const type = api.getObjectType(name);
+      const cmd = api.getCommandString(name, false);
+      if (type === "point" && api.isMoveable(name)) {
+        if (api.isIndependent(name)) {
+          freePoints.push({ name, x0: api.getXcoord(name), y0: api.getYcoord(name) });
+        } else if (/^(Point|Điểm)[\[(]/i.test(cmd)) {
+          pathPoints.push({ name, x0: api.getXcoord(name), y0: api.getYcoord(name) });
+        }
+      }
+      const circleMatch = cmd.match(/^(?:Circle|ĐườngTròn)[\[(]\s*([A-Za-z][A-Za-z0-9_]*'*)\s*,\s*([0-9]+(?:\.[0-9]+)?)\s*[\])]$/i);
+      if (circleMatch && api.exists(circleMatch[1]) && api.getObjectType(circleMatch[1]) === "point") {
+        fixedCircles.push({ name, center: circleMatch[1], r0: Number(circleMatch[2]) });
+        hasRigidConstraint = true;
+      }
+      if (
+        ["circle", "conic", "angle"].includes(type) ||
+        /^(PerpendicularLine|PerpendicularBisector|AngleBisector|Incircle|TriangleCenter|Rotate|Reflect|Circle|ĐườngVuôngGóc|ĐườngTrungTrực|ĐườngPhânGiác|ĐườngTrònNộiTiếp|Quay|ĐốiXứng)/i.test(cmd) ||
+        /^(?:Polygon|ĐaGiác)[\[(][^,]+,[^,]+,\s*\d+\s*[\])]$/i.test(cmd)
+      ) {
+        hasRigidConstraint = true;
+      }
+    }
+    return { freePoints, pathPoints, fixedCircles, hasRigidConstraint };
+  }
   private resolveProxy(hit: string) {
     const api = this.adapter.api;
-    if (!api.exists(hit) || api.getObjectType(hit) !== "point" || this.isDirectPoint(hit)) return null;
-    const visibleRoots: string[] = [], drivers: string[] = [], visited = new Set<string>();
-    const visit = (target: string) => {
-      if (visited.has(target) || !api.exists(target)) return;
-      visited.add(target);
-      if (this.isDirectPoint(target)) {
-        if (api.isIndependent(target) && api.getVisible(target)) visibleRoots.push(target);
-        else drivers.push(target);
-        if (api.isIndependent(target)) return;
+    if (!api.exists(hit) || this.isDirectPoint(hit)) return null;
+    const type = api.getObjectType(hit);
+    if (type === "point") {
+      const visibleRoots: string[] = [], drivers: string[] = [], visited = new Set<string>();
+      const visit = (target: string) => {
+        if (visited.has(target) || !api.exists(target)) return;
+        visited.add(target);
+        if (this.isDirectPoint(target)) {
+          if (api.isIndependent(target) && api.getVisible(target)) visibleRoots.push(target);
+          else drivers.push(target);
+          if (api.isIndependent(target)) return;
+        }
+        for (const input of geometryNames(api.getCommandString(target, false))) if (input !== target) visit(input);
+      };
+      visit(hit);
+      if (visibleRoots.length === 1 && drivers.length === 1) {
+        const anchor = visibleRoots[0], driver = drivers[0];
+        const ax = api.getXcoord(anchor), ay = api.getYcoord(anchor), dx = api.getXcoord(driver), dy = api.getYcoord(driver), hx = api.getXcoord(hit), hy = api.getYcoord(hit);
+        const rDriver = Math.hypot(dx - ax, dy - ay), rHit = Math.hypot(hx - ax, hy - ay);
+        if (rDriver > 1e-6 && rHit > 1e-6) {
+          return {
+            kind: "rotate_driver" as const,
+            anchor,
+            driver,
+            ax,
+            ay,
+            rDriver,
+            deltaAngle: Math.atan2(dy - ay, dx - ax) - Math.atan2(hy - ay, hx - ax),
+          };
+        }
       }
-      for (const input of geometryNames(api.getCommandString(target, false))) if (input !== target) visit(input);
-    };
-    visit(hit);
-    if (visibleRoots.length !== 1 || drivers.length !== 1) return null;
-    const anchor = visibleRoots[0], driver = drivers[0];
-    const ax = api.getXcoord(anchor), ay = api.getYcoord(anchor), dx = api.getXcoord(driver), dy = api.getYcoord(driver), hx = api.getXcoord(hit), hy = api.getYcoord(hit);
-    const rDriver = Math.hypot(dx - ax, dy - ay), rHit = Math.hypot(hx - ax, hy - ay);
-    if (rDriver <= 1e-6 || rHit <= 1e-6) return null;
-    return { anchor, driver, ax, ay, rDriver, deltaAngle: Math.atan2(dy - ay, dx - ax) - Math.atan2(hy - ay, hx - ax) };
+      const comp = this.connectedComponent([hit]);
+      const { freePoints, pathPoints } = this.collectGroupSnapshots(comp);
+      if (freePoints.length > 0 || pathPoints.length > 0) {
+        return { kind: "translate_group" as const, freePoints, pathPoints };
+      }
+      return null;
+    }
+    if (isPolygonType(type) || ["segment", "circle", "line", "ray", "vector"].includes(type)) {
+      const comp = this.connectedComponent([hit]);
+      const { freePoints, pathPoints } = this.collectGroupSnapshots(comp);
+      if (freePoints.length > 0 || pathPoints.length > 0) {
+        return { kind: "translate_group" as const, freePoints, pathPoints };
+      }
+    }
+    return null;
   }
-  beginPointer(modified: boolean, hit: string | null, x: number, y: number) {
+  beginPointer(modified: boolean, hit: string | null, x: number, y: number, host?: HTMLElement | null) {
     const api = this.adapter.api;
     const proxy = this.mode === 0 && !modified && hit ? this.resolveProxy(hit) : null;
     const hiddenHelpers = this.mode === 0 && !modified && hit && api.exists(hit) && api.getObjectType(hit) === "point" && api.isIndependent(hit) && api.isMoveable(hit)
       ? api.getAllObjectNames("point").filter((n) => n !== hit && api.isIndependent(n) && api.isMoveable(n) && !api.getVisible(n)).map((name) => ({ name, dx: api.getXcoord(name) - api.getXcoord(hit), dy: api.getYcoord(name) - api.getYcoord(hit) }))
       : [];
+    const { wx, wy } = this.screenToWorld(x, y, host);
     this.pointer = {
       modified,
       before: [...this.selectedNames],
       hit,
       x,
       y,
+      wx0: wx,
+      wy0: wy,
       moved: false,
       proxy,
       hiddenHelpers,
@@ -189,17 +315,38 @@ export class GeometryController {
     }
   }
   movePointer(x: number, y: number, host?: HTMLElement | null) {
+    if (this.transformState && host) {
+      this.moveTransform(x, y, host);
+      return;
+    }
     if (!this.pointer || Math.hypot(x - this.pointer.x, y - this.pointer.y) <= 4) return;
     this.pointer.moved = true;
     const proxy = this.pointer.proxy;
     if (proxy && host) {
-      const api = this.adapter.api, v = JSON.parse(api.getViewProperties(1)), rect = (host.querySelector(".EuclidianPanel") ?? host).getBoundingClientRect();
-      const wx = v.xMin + (x - rect.left) * v.invXscale, wy = v.yMin + (v.height - (y - rect.top)) * v.invYscale;
-      const angle = Math.atan2(wy - proxy.ay, wx - proxy.ax) + proxy.deltaAngle;
-      api.setCoords(proxy.driver, proxy.ax + proxy.rDriver * Math.cos(angle), proxy.ay + proxy.rDriver * Math.sin(angle));
+      const api = this.adapter.api;
+      const { wx, wy } = this.screenToWorld(x, y, host);
+      if (proxy.kind === "rotate_driver") {
+        const angle = Math.atan2(wy - proxy.ay, wx - proxy.ax) + proxy.deltaAngle;
+        api.setCoords(proxy.driver, proxy.ax + proxy.rDriver * Math.cos(angle), proxy.ay + proxy.rDriver * Math.sin(angle));
+      } else if (proxy.kind === "translate_group") {
+        const dx = wx - this.pointer.wx0;
+        const dy = wy - this.pointer.wy0;
+        this.paused = true;
+        try {
+          for (const p of proxy.freePoints) if (api.exists(p.name)) api.setCoords(p.name, p.x0 + dx, p.y0 + dy);
+          for (const p of proxy.pathPoints) if (api.exists(p.name)) api.setCoords(p.name, p.x0 + dx, p.y0 + dy);
+        } finally {
+          this.paused = false;
+        }
+        this.sync();
+      }
     }
   }
   endPointer() {
+    if (this.transformState) {
+      this.endTransform();
+      return;
+    }
     const p = this.pointer;
     if (!p) return;
     this.dragging = false;
@@ -212,6 +359,110 @@ export class GeometryController {
       );
     else if (this.mode === 0 && p?.proxy && p.hit && !p.moved && !p.modified)
       this.select(p.hit);
+    this.sync();
+    this.flush();
+  }
+  beginTransform(handle: TransformHandle, clientX: number, clientY: number, host: HTMLElement) {
+    const sb = selectionBounds(this, host);
+    if (!sb) return false;
+    const comp = this.connectedComponent(this.selectedNames);
+    const { freePoints, pathPoints, fixedCircles, hasRigidConstraint } = this.collectGroupSnapshots(comp);
+    if (!freePoints.length && !pathPoints.length && !fixedCircles.length) return false;
+    const pMin = this.screenToWorld(sb.left, sb.bottom, host);
+    const pMax = this.screenToWorld(sb.right, sb.top, host);
+    const start = this.screenToWorld(clientX, clientY, host);
+    this.flush();
+    this.transformState = {
+      handle,
+      wx0: start.wx,
+      wy0: start.wy,
+      wxMin: Math.min(pMin.wx, pMax.wx),
+      wxMax: Math.max(pMin.wx, pMax.wx),
+      wyMin: Math.min(pMin.wy, pMax.wy),
+      wyMax: Math.max(pMin.wy, pMax.wy),
+      freePoints,
+      pathPoints,
+      fixedCircles,
+      hasRigidConstraint,
+    };
+    this.dragging = true;
+    this.emit();
+    return true;
+  }
+  moveTransform(clientX: number, clientY: number, host: HTMLElement, shiftKey = false) {
+    const st = this.transformState;
+    if (!st) return;
+    const api = this.adapter.api;
+    const { wx, wy } = this.screenToWorld(clientX, clientY, host);
+    const cx = (st.wxMin + st.wxMax) / 2;
+    const cy = (st.wyMin + st.wyMax) / 2;
+    this.paused = true;
+    try {
+      if (st.handle === "rotate") {
+        const a0 = Math.atan2(st.wy0 - cy, st.wx0 - cx);
+        const a1 = Math.atan2(wy - cy, wx - cx);
+        const da = a1 - a0;
+        const cos = Math.cos(da), sin = Math.sin(da);
+        for (const p of st.freePoints) {
+          if (!api.exists(p.name)) continue;
+          const dx = p.x0 - cx, dy = p.y0 - cy;
+          api.setCoords(p.name, cx + dx * cos - dy * sin, cy + dx * sin + dy * cos);
+        }
+        for (const p of st.pathPoints) {
+          if (!api.exists(p.name)) continue;
+          const dx = p.x0 - cx, dy = p.y0 - cy;
+          api.setCoords(p.name, cx + dx * cos - dy * sin, cy + dx * sin + dy * cos);
+        }
+      } else {
+        const ax = st.handle.includes("w") ? st.wxMax : st.handle.includes("e") ? st.wxMin : cx;
+        const ay = st.handle.includes("s") ? st.wyMax : st.handle.includes("n") ? st.wyMin : cy;
+        const spanX0 = (st.handle.includes("w") ? st.wxMin : st.wxMax) - ax;
+        const spanY0 = (st.handle.includes("s") ? st.wyMin : st.wyMax) - ay;
+        let sx = st.handle.includes("e") || st.handle.includes("w")
+          ? Math.abs(spanX0) > 1e-6 ? (wx - ax) / spanX0 : 1
+          : 1;
+        let sy = st.handle.includes("n") || st.handle.includes("s")
+          ? Math.abs(spanY0) > 1e-6 ? (wy - ay) / spanY0 : 1
+          : 1;
+        sx = Math.max(0.15, Math.min(15, sx));
+        sy = Math.max(0.15, Math.min(15, sy));
+        if (st.hasRigidConstraint || shiftKey) {
+          const uniform =
+            st.handle === "e" || st.handle === "w"
+              ? sx
+              : st.handle === "n" || st.handle === "s"
+                ? sy
+                : Math.max(0.15, Math.min(15, (sx + sy) / 2));
+          sx = uniform;
+          sy = uniform;
+        }
+        for (const p of st.freePoints) {
+          if (api.exists(p.name)) {
+            api.setCoords(p.name, ax + sx * (p.x0 - ax), ay + sy * (p.y0 - ay));
+          }
+        }
+        const uniformScale = (sx + sy) / 2;
+        for (const c of st.fixedCircles) {
+          if (api.exists(c.name) && api.exists(c.center)) {
+            const nextR = Math.max(0.1, Number((c.r0 * uniformScale).toFixed(4)));
+            api.evalCommand(`${c.name}=Circle(${c.center},${nextR})`);
+          }
+        }
+        for (const p of st.pathPoints) {
+          if (api.exists(p.name)) {
+            api.setCoords(p.name, ax + sx * (p.x0 - ax), ay + sy * (p.y0 - ay));
+          }
+        }
+      }
+    } finally {
+      this.paused = false;
+    }
+    this.sync();
+  }
+  endTransform() {
+    if (!this.transformState) return;
+    this.transformState = null;
+    this.dragging = false;
     this.sync();
     this.flush();
   }
@@ -247,7 +498,7 @@ export class GeometryController {
       if (e.type === "updateStyle") this.changed();
       else this.emit();
     }
-    if ((e.type === "dragEnd" || e.type === "movedGeos") && !this.pointer) {
+    if ((e.type === "dragEnd" || e.type === "movedGeos") && !this.pointer && !this.transformState) {
       this.dragging = false;
       this.sync();
       this.flush();

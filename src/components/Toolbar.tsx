@@ -1,14 +1,17 @@
 import { useState } from "react";
+import { polygonPresets, type PolygonPresetId } from "../geometry/polygonPresets";
 import { toolGroups } from "../geometry/tools";
 import { Icon, IconButton } from "./Icon";
 export function Toolbar({
   disabled,
   onTool,
+  onPreset,
   mode,
 }: {
   disabled: boolean;
   mode: number;
   onTool: (id: number, label: string, hint: string) => void;
+  onPreset?: (id: PolygonPresetId, label: string, hint: string) => void;
 }) {
   const [open, setOpen] = useState<number | null>(null);
   return (
@@ -30,7 +33,7 @@ export function Toolbar({
                 aria-label="Đóng trình đơn công cụ"
                 onClick={() => setOpen(null)}
               />
-              <div className="tool-flyout">
+              <div className={`tool-flyout ${g.title === "ĐA GIÁC" ? "polygon-flyout" : ""}`}>
                 <p className="eyebrow purple">{g.title}</p>
                 {g.tools.map(([label, id, hint]) => (
                   <button
@@ -45,7 +48,26 @@ export function Toolbar({
                     {label}
                   </button>
                 ))}
-                <small>Chọn công cụ rồi thao tác trên vùng vẽ.</small>
+                {g.title === "ĐA GIÁC" && onPreset && (
+                  <>
+                    <p className="eyebrow purple flyout-subhead">MẪU ĐA GIÁC ĐỘNG</p>
+                    <div className="polygon-preset-grid">
+                      {polygonPresets.map((preset) => (
+                        <button
+                          key={preset.id}
+                          onClick={() => {
+                            onPreset(preset.id, preset.label, preset.hint);
+                            setOpen(null);
+                          }}
+                        >
+                          <Icon name="polygon" />
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+                <small>Chọn công cụ hoặc chèn mẫu đa giác rồi kéo chỉnh trên vùng vẽ.</small>
               </div>
             </>
           )}

@@ -1,6 +1,6 @@
 import type { GGBApi } from "../types/geogebra";
 import type { GeometryObject } from "../../shared/actions";
-import { triangleVertices } from "./triangleVertices";
+import { isPolygonType, polygonVertices } from "./triangleVertices";
 import { formatSegmentLabels, hideDuplicateBoundaryLabels, segmentDisplayName } from "./segmentLabels";
 let script: Promise<void> | undefined;
 export function loadGeoGebra() {
@@ -49,8 +49,8 @@ export class GeoGebraAdapter {
       labelVisible: /<show[^>]*label="true"/.test(this.api.getXML(name)),
       thickness: this.api.getLineThickness(name),
       lineStyle: this.api.getLineStyle(name),
-      ...(["triangle", "polygon"].includes(this.api.getObjectType(name))
-        ? { vertices: (() => { try { return triangleVertices(this.api, name); } catch { return undefined; } })() }
+      ...(isPolygonType(this.api.getObjectType(name))
+        ? { vertices: (() => { try { return polygonVertices(this.api, name); } catch { return undefined; } })() }
         : {}),
       ...(this.api.getObjectType(name) === "point"
         ? { x: this.api.getXcoord(name), y: this.api.getYcoord(name) }

@@ -1246,3 +1246,96 @@ button.welcome-start:hover:not(:disabled) { background: var(--cyan); border-colo
 @media (prefers-reduced-motion: reduce) {
   .welcome-screen, .welcome-screen *, .welcome-leaving { animation: none !important; transition: none !important; }
 }
+
+.polygon-flyout {
+  width: 340px;
+  max-height: calc(100dvh - 110px);
+  overflow-y: auto;
+}
+.flyout-subhead {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.polygon-preset-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.polygon-preset-grid button {
+  font-size: 12px;
+  padding: 6px 8px;
+  min-height: 32px;
+}
+.color-picker {
+  flex-wrap: wrap;
+}
+.style-popover .actions {
+  flex-wrap: wrap;
+}
+.color-picker input[type="color"],
+.style-popover input[type="color"] {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+.transform-box {
+  position: absolute;
+  pointer-events: none;
+  border: 1.5px dashed var(--purple);
+  border-radius: 2px;
+  z-index: 14;
+}
+.transform-handle,
+.transform-rotate {
+  position: absolute;
+  pointer-events: auto;
+  width: 10px;
+  height: 10px;
+  min-height: 10px;
+  padding: 0;
+  background: #ffffff;
+  border: 1.5px solid var(--purple);
+  border-radius: 2px;
+  box-shadow: 0 1px 2px rgba(35, 35, 45, 0.2);
+}
+.transform-handle:hover,
+.transform-rotate:hover {
+  background: var(--purple);
+}
+.transform-rotate {
+  top: -24px;
+  left: calc(50% - 6px);
+  width: 12px;
+  height: 12px;
+  min-height: 12px;
+  border-radius: 50%;
+  cursor: grab;
+}
+.transform-rotate::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 1.5px;
+  height: 12px;
+  background: var(--purple);
+  transform: translateX(-50%);
+}
+.handle-nw { top: -5px; left: -5px; cursor: nwse-resize; }
+.handle-n { top: -5px; left: calc(50% - 5px); cursor: ns-resize; }
+.handle-ne { top: -5px; right: -5px; cursor: nesw-resize; }
+.handle-e { top: calc(50% - 5px); right: -5px; cursor: ew-resize; }
+.handle-se { bottom: -5px; right: -5px; cursor: nwse-resize; }
+.handle-s { bottom: -5px; left: calc(50% - 5px); cursor: ns-resize; }
+.handle-sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.handle-w { top: calc(50% - 5px); left: -5px; cursor: ew-resize; }
+.object-value b {
+  width: auto;
+  min-width: 32px;
+  max-width: 72px;
+}

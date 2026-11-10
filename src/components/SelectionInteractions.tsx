@@ -1,6 +1,6 @@
 import { supportsStroke } from "../geometry/GeometryState";
 import { useEffect, useRef, useState, type RefObject } from "react";
-import type { GeometryController } from "../geometry/GeometryController";
+import type { GeometryController, TransformHandle } from "../geometry/GeometryController";
 import {
   containedObjects,
   hitObject,
@@ -10,6 +10,30 @@ import {
 } from "../geometry/ScreenProjection";
 import { IconButton } from "./Icon";
 import { StrokeWidthSelect } from "./StrokeWidthSelect";
+
+const SWATCH_COLORS = [
+  "#23232D",
+  "#4F18E9",
+  "#09EFF8",
+  "#E31665",
+  "#10B981",
+  "#F59E0B",
+  "#8B5CF6",
+] as const;
+
+const RESIZE_HANDLES: readonly { id: TransformHandle; label: string }[] = [
+  { id: "nw", label: "Co giãn góc trên trái" },
+  { id: "n", label: "Co giãn cạnh trên" },
+  { id: "ne", label: "Co giãn góc trên phải" },
+  { id: "e", label: "Co giãn cạnh phải" },
+  { id: "se", label: "Co giãn góc dưới phải" },
+  { id: "s", label: "Co giãn cạnh dưới" },
+  { id: "sw", label: "Co giãn góc dưới trái" },
+  { id: "w", label: "Co giãn cạnh trái" },
+];
+
+const TRANSFORM_PAD = 18;
+
 export function SelectionInteractions({
   controller,
   host,
@@ -43,13 +67,20 @@ export function SelectionInteractions({
     const node = host.current;
     if (!node || !controller) return;
     const down = (e: PointerEvent) => {
-      if (
-        disabled ||
-        e.button !== 0 ||
-        !(e.target instanceof Element) ||
-        !e.target.closest(".main-engine")
-      )
-        return;
+      if (disabled || e.button !== 0 || !(e.target instanceof Element)) return;
+      const handleEl = e.target.closest("[data-handle]");
+      if (handleEl && controller.mode === 0) {
+        const handle = handleEl.getAttribute("data-handle") as TransformHandle;
+        if (controller.beginTransform(handle, e.clientX, e.clientY, node)) {
+          e.preventDefault();
+          e.stopPropagation();
+          node.setPointerCapture(e.pointerId);
+          setMenu(null);
+          setPopover(false);
+          return;
+        }
+      }
+      if (!e.target.closest(".main-engine")) return;
       node.focus({ preventScroll: true });
       const hit =
         controller.mode === 0
@@ -63,6 +94,7 @@ export function SelectionInteractions({
         hit,
         e.clientX,
         e.clientY,
+        node,
       );
       setMenu(null);
       setPopover(false);
@@ -132,6 +164,39 @@ export function SelectionInteractions({
       }
       setTimeout(() => controller.endPointer(), 0);
     };
+    const wheel = (e: WheelEvent) => {
+      if (
+        disabled ||
+        !(e.target instanceof Element) ||
+        !e.target.closest(".main-engine") ||
+        Math.abs(e.deltaY) < 1
+      )
+        return;
+      e.preventDefault();
+      const api = controller.adapter.api;
+      const v = JSON.parse(api.getViewProperties(1)) as {
+        xMin: number;
+        yMin: number;
+        width: number;
+        height: number;
+        invXscale: number;
+        invYscale: number;
+      };
+      const panel = (node.querySelector(".EuclidianPanel") ?? node).getBoundingClientRect();
+      const factor = e.deltaY > 0 ? 1.1 : 1 / 1.1;
+      const wx = v.xMin + (e.clientX - panel.left) * v.invXscale;
+      const wy = v.yMin + (v.height - (e.clientY - panel.top)) * v.invYscale;
+      const xMax = v.xMin + v.width * v.invXscale;
+      const yMax = v.yMin + v.height * v.invYscale;
+      const nextXMin = wx - (wx - v.xMin) * factor;
+      const nextXMax = wx + (xMax - wx) * factor;
+      const nextYMin = wy - (wy - v.yMin) * factor;
+      const nextYMax = wy + (yMax - wy) * factor;
+      if (nextXMax - nextXMin > 0.2 && nextXMax - nextXMin < 5000) {
+        api.setCoordSystem(nextXMin, nextXMax, nextYMin, nextYMax);
+        controller.sync();
+      }
+    };
     const cancel = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         start.current = null;
@@ -179,6 +244,7 @@ export function SelectionInteractions({
     node.addEventListener("pointermove", move, true);
     node.addEventListener("pointerup", up, true);
     node.addEventListener("pointercancel", up, true);
+    node.addEventListener("wheel", wheel, { passive: false });
     node.addEventListener("contextmenu", context, true);
     window.addEventListener("keydown", cancel);
     return () => {
@@ -186,6 +252,7 @@ export function SelectionInteractions({
       node.removeEventListener("pointermove", move, true);
       node.removeEventListener("pointerup", up, true);
       node.removeEventListener("pointercancel", up, true);
+      node.removeEventListener("wheel", wheel);
       node.removeEventListener("contextmenu", context, true);
       window.removeEventListener("keydown", cancel);
     };
@@ -197,6 +264,12 @@ export function SelectionInteractions({
   const selectedObjects = controller.objects.filter((o) =>
     selected.includes(o.name),
   );
+  const visibleNames = controller.objects.filter((o) => o.visible).map((o) => o.name);
+  const showTransformBox =
+    selected.length > 0 &&
+    !!bounds &&
+    (bounds.right - bounds.left > 8 || bounds.bottom - bounds.top > 8) &&
+    controller.mode === 0;
   const execute = (fn: () => void) => {
     try {
       fn();
@@ -223,14 +296,15 @@ export function SelectionInteractions({
           .map((target) => ({ type: "style", target, ...props })),
       ),
     );
+  const topOffset = showTransformBox ? TRANSFORM_PAD + 64 : 52;
   const left = bounds
     ? Math.max(
         rect.left + 8,
-        Math.min((bounds.left + bounds.right) / 2 - 130, rect.right - 280),
+        Math.min((bounds.left + bounds.right) / 2 - 150, rect.right - 320),
       )
     : 0;
   const top = bounds
-    ? Math.max(rect.top + 60, Math.min(bounds.top - 52, rect.bottom - 50))
+    ? Math.max(rect.top + 60, Math.min(bounds.top - topOffset, rect.bottom - 50))
     : 0;
   return (
     <>
@@ -245,6 +319,36 @@ export function SelectionInteractions({
             height: box.bottom - box.top,
           }}
         />
+      )}
+      {showTransformBox && bounds && (
+        <div
+          className="transform-box"
+          data-testid="transform-box"
+          style={{
+            left: bounds.left - rect.left - TRANSFORM_PAD,
+            top: bounds.top - rect.top - TRANSFORM_PAD,
+            width: bounds.right - bounds.left + TRANSFORM_PAD * 2,
+            height: bounds.bottom - bounds.top + TRANSFORM_PAD * 2,
+          }}
+        >
+          <button
+            type="button"
+            className="transform-rotate"
+            data-handle="rotate"
+            aria-label="Xoay hình"
+            title="Kéo để xoay hình"
+          />
+          {RESIZE_HANDLES.map((h) => (
+            <button
+              key={h.id}
+              type="button"
+              className={`transform-handle handle-${h.id}`}
+              data-handle={h.id}
+              aria-label={h.label}
+              title={h.label}
+            />
+          ))}
+        </div>
       )}
       {selected.length > 0 &&
         bounds &&
@@ -262,6 +366,14 @@ export function SelectionInteractions({
             >
               Kiểu nét · {selected.length}
             </button>
+            {visibleNames.length > 1 && selected.length < visibleNames.length && (
+              <button
+                onClick={() => controller.selectMany(visibleNames)}
+                title="Chọn toàn bộ hình để phóng to, thu nhỏ hoặc xoay"
+              >
+                Chọn cả hình
+              </button>
+            )}
             <IconButton
               icon="eye"
               label="Ẩn đối tượng đã chọn"
@@ -284,7 +396,7 @@ export function SelectionInteractions({
               >
                 <span>Màu nét</span>
                 <div className="actions">
-                  {["#23232D", "#4F18E9", "#09EFF8", "#E31665"].map((color) => (
+                  {SWATCH_COLORS.map((color) => (
                     <button
                       className="swatch"
                       key={color}
@@ -293,6 +405,12 @@ export function SelectionInteractions({
                       onClick={() => style({ color })}
                     />
                   ))}
+                  <input
+                    type="color"
+                    aria-label="Đổi màu tùy chỉnh"
+                    defaultValue={selectedObjects[0]?.color || "#23232D"}
+                    onChange={(e) => style({ color: e.target.value.toUpperCase() })}
+                  />
                 </div>
                 <label>
                   Độ dày

@@ -5,6 +5,40 @@ import type { GeometryController } from "../geometry/GeometryController";
 import { labelSchema } from "../../shared/actions";
 import { IconButton } from "./Icon";
 import { StrokeWidthSelect } from "./StrokeWidthSelect";
+
+const OBJECT_TYPE_LABELS: Record<string, string> = {
+  point: "Điểm",
+  segment: "Đoạn thẳng",
+  line: "Đường thẳng",
+  ray: "Tia",
+  vector: "Vectơ",
+  triangle: "Tam giác",
+  quadrilateral: "Tứ giác",
+  pentagon: "Ngũ giác",
+  hexagon: "Lục giác",
+  heptagon: "Thất giác",
+  octagon: "Bát giác",
+  nonagon: "Cửu giác",
+  decagon: "Thập giác",
+  polygon: "Đa giác",
+  circle: "Đường tròn",
+  conic: "Đường conic",
+  conicpart: "Cung conic",
+  angle: "Góc",
+  numeric: "Số đo",
+  text: "Văn bản",
+};
+
+const SWATCH_COLORS = [
+  "#23232D",
+  "#4F18E9",
+  "#09EFF8",
+  "#E31665",
+  "#10B981",
+  "#F59E0B",
+  "#8B5CF6",
+] as const;
+
 export function PropertyInspector({
   controller,
   onClose,
@@ -32,6 +66,7 @@ export function PropertyInspector({
       geometryNames(d.definition).includes(o.name),
     )
     .map((d) => d.name);
+  const typeLabel = OBJECT_TYPE_LABELS[o.type] ?? "Đối tượng";
   return (
     <aside className="inspector">
       <header>
@@ -39,7 +74,7 @@ export function PropertyInspector({
         <IconButton icon="close" label="Đóng thuộc tính" onClick={onClose} />
       </header>
       <h2>
-        {o.type === "point" ? "Điểm" : "Đối tượng"} {o.displayName ?? o.name}
+        {typeLabel} {o.displayName ?? o.name}
       </h2>
       <label className="field">
         Tên
@@ -126,7 +161,7 @@ export function PropertyInspector({
       <p className="eyebrow">HIỂN THỊ</p>
       <div className="color-picker">
         <span>Nét vẽ</span>
-        {["#23232D", "#4F18E9", "#09EFF8", "#E31665"].map((c) => (
+        {SWATCH_COLORS.map((c) => (
           <button
             key={c}
             style={{ background: c }}
@@ -137,6 +172,14 @@ export function PropertyInspector({
             }
           />
         ))}
+        <input
+          type="color"
+          aria-label="Màu tùy chỉnh"
+          value={/^#[0-9A-Fa-f]{6}$/.test(o.color) ? o.color : "#23232D"}
+          onChange={(e) =>
+            controller.apply([{ type: "style", target: o.name, color: e.target.value.toUpperCase() }])
+          }
+        />
       </div>
       <div className="coordinate-fields">
         <label className="field">
