@@ -265,6 +265,7 @@ export function SelectionInteractions({
     selected.includes(o.name),
   );
   const visibleNames = controller.objects.filter((o) => o.visible).map((o) => o.name);
+  const canUnlink = controller.canUnlink(selected);
   const showTransformBox =
     selected.length > 0 &&
     !!bounds &&
@@ -366,6 +367,14 @@ export function SelectionInteractions({
             >
               Kiểu nét · {selected.length}
             </button>
+            {canUnlink && (
+              <button
+                onClick={() => execute(() => controller.unlinkObjects(selected))}
+                title="Gỡ ràng buộc dựng hình để kéo tự do từng điểm"
+              >
+                Xóa liên kết
+              </button>
+            )}
             {visibleNames.length > 1 && selected.length < visibleNames.length && (
               <button
                 onClick={() => controller.selectMany(visibleNames)}
@@ -497,6 +506,16 @@ export function SelectionInteractions({
                 >
                   Xem quan hệ phụ thuộc
                 </button>
+                {canUnlink && (
+                  <button
+                    role="menuitem"
+                    onClick={() =>
+                      execute(() => controller.unlinkObjects(selected))
+                    }
+                  >
+                    Xóa liên kết
+                  </button>
+                )}
                 <button
                   role="menuitem"
                   onClick={() => {

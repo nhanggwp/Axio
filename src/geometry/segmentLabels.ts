@@ -1,5 +1,24 @@
 import type { GGBApi } from "../types/geogebra";
+import type { GeometryObject } from "../../shared/actions";
 import { isPolygonType, polygonVertices } from "./triangleVertices";
+
+const BOUNDARY_SEGMENT_RE = /^(?:Segment|ĐoạnThẳng)[\[(]\s*[^,\s]+\s*,\s*[^,\]\)\s]+\s*,/i;
+
+export function isDuplicateBoundarySegment(
+  o: GeometryObject,
+  allObjects: readonly GeometryObject[],
+): boolean {
+  if (o.type !== "segment" || !o.displayName || !BOUNDARY_SEGMENT_RE.test(o.definition)) {
+    return false;
+  }
+  return allObjects.some(
+    (other) =>
+      other.name !== o.name &&
+      other.type === "segment" &&
+      other.displayName === o.displayName &&
+      !BOUNDARY_SEGMENT_RE.test(other.definition),
+  );
+}
 
 /** Display the actual endpoints or polygon vertices; object IDs remain stable for dependencies and AI. */
 export function segmentDisplayName(api: GGBApi, name: string): string | undefined {

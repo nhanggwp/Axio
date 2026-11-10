@@ -45,10 +45,25 @@ export class GeometryController {
     wy0: number;
     moved: boolean;
     proxy?:
-      | { kind: "rotate_driver"; anchor: string; driver: string; ax: number; ay: number; rDriver: number; deltaAngle: number }
+      | {
+          kind: "direct_point";
+          target: string;
+          x0: number;
+          y0: number;
+          hiddenHelpers: { name: string; dx: number; dy: number }[];
+        }
+      | {
+          kind: "rotate_drivers";
+          anchor: string;
+          ax: number;
+          ay: number;
+          r0: number;
+          angle0: number;
+          allowScale: boolean;
+          drivers: PointSnapshot[];
+        }
       | { kind: "translate_group"; freePoints: PointSnapshot[]; pathPoints: PointSnapshot[] }
       | null;
-    hiddenHelpers?: { name: string; dx: number; dy: number }[];
   } | null = null;
   private transformState: {
     handle: TransformHandle;
@@ -117,10 +132,6 @@ export class GeometryController {
   };
   private changed = () => {
     if (this.paused || this.disposed) return;
-    if (this.pointer?.hiddenHelpers?.length && this.pointer.hit && this.adapter.api.exists(this.pointer.hit)) {
-      const api = this.adapter.api, ax = api.getXcoord(this.pointer.hit), ay = api.getYcoord(this.pointer.hit);
-      for (const h of this.pointer.hiddenHelpers) if (api.exists(h.name) && Math.hypot(api.getXcoord(h.name) - (ax + h.dx), api.getYcoord(h.name) - (ay + h.dy)) > 1e-7) api.setCoords(h.name, ax + h.dx, ay + h.dy);
-    }
     cancelAnimationFrame(this.frame);
     this.frame = requestAnimationFrame(this.sync);
     clearTimeout(this.timer);
@@ -239,39 +250,96 @@ export class GeometryController {
   }
   private resolveProxy(hit: string) {
     const api = this.adapter.api;
-    if (!api.exists(hit) || this.isDirectPoint(hit)) return null;
+    if (!api.exists(hit)) return null;
+    if (this.isDirectPoint(hit)) {
+      const comp = this.connectedComponent([hit]);
+      const hiddenHelpers = api.isIndependent(hit)
+        ? api
+            .getAllObjectNames("point")
+            .filter(
+              (n) =>
+                n !== hit &&
+                comp.has(n) &&
+                api.isIndependent(n) &&
+                api.isMoveable(n) &&
+                !api.getVisible(n),
+            )
+            .map((name) => ({
+              name,
+              dx: api.getXcoord(name) - api.getXcoord(hit),
+              dy: api.getYcoord(name) - api.getYcoord(hit),
+            }))
+        : [];
+      return {
+        kind: "direct_point" as const,
+        target: hit,
+        x0: api.getXcoord(hit),
+        y0: api.getYcoord(hit),
+        hiddenHelpers,
+      };
+    }
     const type = api.getObjectType(hit);
     if (type === "point") {
-      const visibleRoots: string[] = [], drivers: string[] = [], visited = new Set<string>();
-      const visit = (target: string) => {
-        if (visited.has(target) || !api.exists(target)) return;
-        visited.add(target);
-        if (this.isDirectPoint(target)) {
-          if (api.isIndependent(target) && api.getVisible(target)) visibleRoots.push(target);
-          else drivers.push(target);
-          if (api.isIndependent(target)) return;
-        }
-        for (const input of geometryNames(api.getCommandString(target, false))) if (input !== target) visit(input);
-      };
-      visit(hit);
-      if (visibleRoots.length === 1 && drivers.length === 1) {
-        const anchor = visibleRoots[0], driver = drivers[0];
-        const ax = api.getXcoord(anchor), ay = api.getYcoord(anchor), dx = api.getXcoord(driver), dy = api.getYcoord(driver), hx = api.getXcoord(hit), hy = api.getYcoord(hit);
-        const rDriver = Math.hypot(dx - ax, dy - ay), rHit = Math.hypot(hx - ax, hy - ay);
-        if (rDriver > 1e-6 && rHit > 1e-6) {
+      const comp = this.connectedComponent([hit]);
+      const { freePoints, pathPoints, fixedCircles } = this.collectGroupSnapshots(comp);
+      const visibleRoots = freePoints.filter((p) => api.getVisible(p.name));
+      const hiddenRoots = freePoints.filter((p) => !api.getVisible(p.name));
+      const isPolygonVertex = this.objects.some((o) => o.vertices?.includes(hit));
+      const segDegree = this.objects.filter(
+        (o) =>
+          o.type === "segment" &&
+          o.visible &&
+          new RegExp(
+            `^(?:Segment|ĐoạnThẳng)[\\[(]\\s*(?:${hit}\\s*,|[^,\\s]+\\s*,\\s*${hit}\\b)`,
+            "i",
+          ).test(o.definition),
+      ).length;
+      const isMainVertex = isPolygonVertex || segDegree >= 2;
+
+      if (visibleRoots.length === 1 && (pathPoints.length > 0 || hiddenRoots.length > 0)) {
+        const anchor = visibleRoots[0];
+        const hx = api.getXcoord(hit),
+          hy = api.getYcoord(hit);
+        const rHit = Math.hypot(hx - anchor.x0, hy - anchor.y0);
+        const drivers = [...pathPoints, ...hiddenRoots].filter(
+          (d) => Math.hypot(d.x0 - anchor.x0, d.y0 - anchor.y0) > 1e-6,
+        );
+        if (rHit > 1e-6 && drivers.length > 0) {
           return {
-            kind: "rotate_driver" as const,
-            anchor,
-            driver,
-            ax,
-            ay,
-            rDriver,
-            deltaAngle: Math.atan2(dy - ay, dx - ax) - Math.atan2(hy - ay, hx - ax),
+            kind: "rotate_drivers" as const,
+            anchor: anchor.name,
+            ax: anchor.x0,
+            ay: anchor.y0,
+            r0: rHit,
+            angle0: Math.atan2(hy - anchor.y0, hx - anchor.x0),
+            allowScale: false,
+            drivers,
           };
         }
       }
-      const comp = this.connectedComponent([hit]);
-      const { freePoints, pathPoints } = this.collectGroupSnapshots(comp);
+
+      if (visibleRoots.length >= 2 && isMainVertex) {
+        const anchor = visibleRoots[0];
+        const hx = api.getXcoord(hit),
+          hy = api.getYcoord(hit);
+        const rHit = Math.hypot(hx - anchor.x0, hy - anchor.y0);
+        const drivers = [...visibleRoots.slice(1), ...pathPoints, ...hiddenRoots].filter(
+          (d) => Math.hypot(d.x0 - anchor.x0, d.y0 - anchor.y0) > 1e-6,
+        );
+        if (rHit > 1e-6 && drivers.length > 0) {
+          return {
+            kind: "rotate_drivers" as const,
+            anchor: anchor.name,
+            ax: anchor.x0,
+            ay: anchor.y0,
+            r0: rHit,
+            angle0: Math.atan2(hy - anchor.y0, hx - anchor.x0),
+            allowScale: fixedCircles.length === 0,
+            drivers,
+          };
+        }
+      }
+
       if (freePoints.length > 0 || pathPoints.length > 0) {
         return { kind: "translate_group" as const, freePoints, pathPoints };
       }
@@ -289,9 +357,6 @@ export class GeometryController {
   beginPointer(modified: boolean, hit: string | null, x: number, y: number, host?: HTMLElement | null) {
     const api = this.adapter.api;
     const proxy = this.mode === 0 && !modified && hit ? this.resolveProxy(hit) : null;
-    const hiddenHelpers = this.mode === 0 && !modified && hit && api.exists(hit) && api.getObjectType(hit) === "point" && api.isIndependent(hit) && api.isMoveable(hit)
-      ? api.getAllObjectNames("point").filter((n) => n !== hit && api.isIndependent(n) && api.isMoveable(n) && !api.getVisible(n)).map((name) => ({ name, dx: api.getXcoord(name) - api.getXcoord(hit), dy: api.getYcoord(name) - api.getYcoord(hit) }))
-      : [];
     const { wx, wy } = this.screenToWorld(x, y, host);
     this.pointer = {
       modified,
@@ -303,7 +368,6 @@ export class GeometryController {
       wy0: wy,
       moved: false,
       proxy,
-      hiddenHelpers,
     };
     this.dragging = true;
     if (this.mode === 0 && hit && api.exists(hit) && api.getObjectType(hit) === "point") {
@@ -325,9 +389,48 @@ export class GeometryController {
     if (proxy && host) {
       const api = this.adapter.api;
       const { wx, wy } = this.screenToWorld(x, y, host);
-      if (proxy.kind === "rotate_driver") {
-        const angle = Math.atan2(wy - proxy.ay, wx - proxy.ax) + proxy.deltaAngle;
-        api.setCoords(proxy.driver, proxy.ax + proxy.rDriver * Math.cos(angle), proxy.ay + proxy.rDriver * Math.sin(angle));
+      if (proxy.kind === "direct_point") {
+        const dx = wx - this.pointer.wx0;
+        const dy = wy - this.pointer.wy0;
+        this.paused = true;
+        try {
+          if (api.exists(proxy.target)) {
+            api.setCoords(proxy.target, proxy.x0 + dx, proxy.y0 + dy);
+            const ax = api.getXcoord(proxy.target);
+            const ay = api.getYcoord(proxy.target);
+            for (const h of proxy.hiddenHelpers) {
+              if (api.exists(h.name)) api.setCoords(h.name, ax + h.dx, ay + h.dy);
+            }
+          }
+        } finally {
+          this.paused = false;
+        }
+        this.sync();
+      } else if (proxy.kind === "rotate_drivers") {
+        const da = Math.atan2(wy - proxy.ay, wx - proxy.ax) - proxy.angle0;
+        const r1 = Math.hypot(wx - proxy.ax, wy - proxy.ay);
+        const scale =
+          proxy.allowScale && proxy.r0 > 1e-6
+            ? Math.max(0.15, Math.min(15, r1 / proxy.r0))
+            : 1;
+        const cos = Math.cos(da) * scale;
+        const sin = Math.sin(da) * scale;
+        this.paused = true;
+        try {
+          for (const d of proxy.drivers) {
+            if (!api.exists(d.name)) continue;
+            const dx = d.x0 - proxy.ax;
+            const dy = d.y0 - proxy.ay;
+            api.setCoords(
+              d.name,
+              proxy.ax + dx * cos - dy * sin,
+              proxy.ay + dx * sin + dy * cos,
+            );
+          }
+        } finally {
+          this.paused = false;
+        }
+        this.sync();
       } else if (proxy.kind === "translate_group") {
         const dx = wx - this.pointer.wx0;
         const dy = wy - this.pointer.wy0;
@@ -351,14 +454,17 @@ export class GeometryController {
     if (!p) return;
     this.dragging = false;
     this.pointer = null;
-    if (this.mode === 0 && p?.modified && p.hit && !p.moved)
+    if (this.mode === 0 && p.modified && p.hit && !p.moved) {
       this.selectMany(
         p.before.includes(p.hit)
           ? p.before.filter((n) => n !== p.hit)
           : [...p.before, p.hit],
       );
-    else if (this.mode === 0 && p?.proxy && p.hit && !p.moved && !p.modified)
-      this.select(p.hit);
+    } else if (this.mode === 0 && p.hit && !p.modified) {
+      if (!p.moved || p.before.length <= 1 || !p.before.includes(p.hit)) {
+        this.select(p.hit);
+      }
+    }
     this.sync();
     this.flush();
   }
@@ -553,6 +659,198 @@ export class GeometryController {
     };
     visit(name);
     return [...found].slice(0, 6);
+  }
+  unlinkTargetPoints(names = this.selectedNames): string[] {
+    const api = this.adapter.api;
+    const seeds = names.filter((n) => api.exists(n));
+    if (!seeds.length) return [];
+    const isLinkedPoint = (name: string) =>
+      api.exists(name) &&
+      api.getObjectType(name) === "point" &&
+      !api.isIndependent(name);
+
+    const comp = this.connectedComponent(seeds);
+    const primaryVertices = new Set<string>();
+    for (const o of this.objects) {
+      if (!comp.has(o.name)) continue;
+      if (o.vertices?.length) {
+        for (const v of o.vertices) {
+          if (isLinkedPoint(v)) primaryVertices.add(v);
+        }
+      }
+    }
+    if (primaryVertices.size === 0) {
+      const segDegree = new Map<string, number>();
+      for (const o of this.objects) {
+        if (!comp.has(o.name) || o.type !== "segment" || !o.visible) continue;
+        const m = o.definition.match(
+          /^(?:Segment|ĐoạnThẳng)[\[(]\s*([^,\s]+)\s*,\s*([^,\]\)\s]+)/i,
+        );
+        if (!m) continue;
+        for (const ep of [m[1], m[2]]) {
+          segDegree.set(ep, (segDegree.get(ep) ?? 0) + 1);
+        }
+      }
+      for (const [pt, deg] of segDegree) {
+        if (deg >= 2 && isLinkedPoint(pt)) {
+          primaryVertices.add(pt);
+        }
+      }
+    }
+
+    if (
+      seeds.every((n) => api.getObjectType(n) === "point") &&
+      !seeds.some((n) => primaryVertices.has(n))
+    ) {
+      const direct = seeds.filter(isLinkedPoint);
+      if (direct.length) return [...new Set(direct)];
+    }
+
+    if (primaryVertices.size > 0) {
+      return [...primaryVertices];
+    }
+
+    const seedPoints = seeds.filter(isLinkedPoint);
+    if (seedPoints.length > 0) return [...new Set(seedPoints)];
+
+    return [...comp].filter((n) => api.getVisible(n) && isLinkedPoint(n));
+  }
+  canUnlink(names = this.selectedNames): boolean {
+    return this.unlinkTargetPoints(names).length > 0;
+  }
+  unlinkObjects(names = this.selectedNames): string[] {
+    const targets = this.unlinkTargetPoints(names);
+    if (!targets.length) return [];
+    const api = this.adapter.api;
+    const targetSet = new Set(targets);
+    const coords = new Map<string, { x: number; y: number }>();
+    for (const name of targetSet) {
+      if (api.exists(name) && api.getObjectType(name) === "point") {
+        coords.set(name, { x: api.getXcoord(name), y: api.getYcoord(name) });
+      }
+    }
+    const visibleBefore = new Set(
+      this.objects.filter((o) => o.visible).map((o) => o.name),
+    );
+    this.mutate(() => {
+      const doc = new DOMParser().parseFromString(
+        this.adapter.snapshot(),
+        "application/xml",
+      );
+      const construction = doc.querySelector("construction");
+      if (!construction) return;
+
+      for (const cmd of [...construction.querySelectorAll(":scope > command")]) {
+        const out = cmd.querySelector("output");
+        if (!out) continue;
+        const outputs = [...out.attributes].map((a) => a.value);
+        if (outputs.some((o) => targetSet.has(o))) {
+          cmd.remove();
+        }
+      }
+
+      for (const expr of [
+        ...construction.querySelectorAll(":scope > expression"),
+      ]) {
+        const label = expr.getAttribute("label");
+        if (label && targetSet.has(label)) {
+          expr.remove();
+        }
+      }
+
+      for (const name of targetSet) {
+        const el = [
+          ...construction.querySelectorAll(':scope > element[type="point"]'),
+        ].find((e) => e.getAttribute("label") === name);
+        if (!el) continue;
+        const pt = coords.get(name);
+        if (pt) {
+          const exprEl = doc.createElement("expression");
+          exprEl.setAttribute("label", name);
+          exprEl.setAttribute("exp", `(${pt.x}, ${pt.y})`);
+          exprEl.setAttribute("type", "point");
+          construction.insertBefore(exprEl, el);
+          let coordsEl = el.querySelector("coords");
+          if (!coordsEl) {
+            coordsEl = doc.createElement("coords");
+            el.appendChild(coordsEl);
+          }
+          coordsEl.setAttribute("x", String(pt.x));
+          coordsEl.setAttribute("y", String(pt.y));
+          coordsEl.setAttribute("z", "1.0");
+        }
+        el.querySelector("fixed")?.setAttribute("val", "false");
+        el.querySelector("auxiliary")?.setAttribute("val", "false");
+      }
+
+      const remainingCommands = [
+        ...construction.querySelectorAll(":scope > command"),
+      ];
+      const needed = new Set<string>(visibleBefore);
+      for (const name of targetSet) needed.add(name);
+
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const cmd of remainingCommands) {
+          const out = cmd.querySelector("output");
+          const inp = cmd.querySelector("input");
+          if (!out || !inp) continue;
+          const outputs = [...out.attributes]
+            .map((a) => a.value)
+            .filter(Boolean);
+          if (outputs.some((o) => needed.has(o))) {
+            for (const o of outputs) {
+              if (!needed.has(o)) {
+                needed.add(o);
+                changed = true;
+              }
+            }
+            for (const attr of [...inp.attributes]) {
+              for (const ref of geometryNames(attr.value)) {
+                if (!needed.has(ref)) {
+                  needed.add(ref);
+                  changed = true;
+                }
+              }
+            }
+          }
+        }
+      }
+
+      for (const cmd of remainingCommands) {
+        const out = cmd.querySelector("output");
+        const outputs = out
+          ? [...out.attributes].map((a) => a.value).filter(Boolean)
+          : [];
+        if (outputs.length > 0 && outputs.every((o) => !needed.has(o))) {
+          cmd.remove();
+        }
+      }
+
+      for (const node of [
+        ...construction.querySelectorAll(
+          ":scope > element, :scope > expression",
+        ),
+      ]) {
+        const label = node.getAttribute("label");
+        if (label && !needed.has(label)) {
+          node.remove();
+        }
+      }
+
+      const nextXml = new XMLSerializer().serializeToString(doc);
+      this.adapter.restore(nextXml);
+      for (const name of targetSet) {
+        if (api.exists(name)) {
+          api.setFixed(name, false, true);
+        }
+      }
+      this.adapter.hideDuplicateBoundaryLabels();
+    });
+    this.drawingFeedback = `Đã xóa liên kết ${targets.join(", ")} · kéo tự do các điểm để chỉnh hình.`;
+    this.emit();
+    return targets;
   }
   deletionImpact(names = this.selectedNames) {
     return affectedByDeletion(this.objects, names);

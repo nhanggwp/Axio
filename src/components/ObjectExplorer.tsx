@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { GeometryController } from "../geometry/GeometryController";
+import { isDuplicateBoundarySegment } from "../geometry/segmentLabels";
 import { POLYGON_TYPES } from "../geometry/triangleVertices";
 import type { GeometryObject } from "../../shared/actions";
 import { IconButton } from "./Icon";
@@ -47,6 +48,7 @@ export function ObjectExplorer({
               .filter(
                 (o) =>
                   (types as readonly string[]).includes(o.type) &&
+                  !isDuplicateBoundarySegment(o, controller.objects) &&
                   [o.name, o.displayName].some((name) => name?.toLowerCase().includes(search.toLowerCase())),
               )
               .map((o) => (

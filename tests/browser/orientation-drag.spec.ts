@@ -147,3 +147,115 @@ test("polygon presets, auto-synthesized polygons and draw.io resize/rotate handl
   expect(scaledTri.AB).toBeGreaterThan(9.5);
   expect(scaledTri.AC / scaledTri.AB).toBeCloseTo(12 / 9, 2);
 });
+
+test("multi-selected figures with multiple hidden helpers allow dragging any point and unlinking constraints", async ({ page }) => {
+  await ready(page);
+  await page.evaluate(() => {
+    const c = window.axio!;
+    c.apply([
+      { type: "point", label: "A", x: -3, y: -2, auxiliary: false },
+      { type: "point", label: "D", x: -3, y: 4, auxiliary: true },
+      { type: "point", label: "E", x: -9, y: -2, auxiliary: true },
+      { type: "construct", label: "lAE", kind: "line", refs: ["A", "E"], auxiliary: true },
+      { type: "construct", label: "cB", kind: "circle_radius", refs: ["A"], value: 7, auxiliary: true },
+      { type: "construct", label: "B", kind: "intersection", refs: ["lAE", "cB"], value: 1, auxiliary: false },
+      { type: "construct", label: "pAC", kind: "line", refs: ["A", "D"], auxiliary: true },
+      { type: "construct", label: "cC", kind: "circle_radius", refs: ["A"], value: 9, auxiliary: true },
+      { type: "construct", label: "C", kind: "intersection", refs: ["pAC", "cC"], value: 1, auxiliary: false },
+      { type: "construct", label: "AB", kind: "segment", refs: ["A", "B"], auxiliary: false },
+      { type: "construct", label: "BC", kind: "segment", refs: ["B", "C"], auxiliary: false },
+      { type: "construct", label: "AC", kind: "segment", refs: ["A", "C"], auxiliary: false },
+      { type: "construct", label: "ABC", kind: "polygon", refs: ["A", "B", "C"], auxiliary: false },
+      { type: "construct", label: "circ", kind: "circumcircle", refs: ["A", "B", "C"], auxiliary: false },
+      { type: "construct", label: "angA", kind: "angle", refs: ["B", "A", "C"], auxiliary: false },
+    ]);
+    c.adapter.resetView();
+    c.selectMany(c.objects.filter((o) => o.visible).map((o) => o.name));
+  });
+
+  // No duplicate AB rows in ObjectExplorer
+  await expect(page.locator(".explorer .object-value b", { hasText: /^AB$/ })).toHaveCount(1);
+
+  // Dragging A works even when all objects are selected and an angle exists at A
+  const aBefore = await page.evaluate(() => ({
+    ax: window.axio!.adapter.api.getXcoord("A"),
+    bx: window.axio!.adapter.api.getXcoord("B"),
+  }));
+  const aPos = await position(page, "A");
+  await page.mouse.move(aPos.x, aPos.y);
+  await page.mouse.down();
+  await page.mouse.move(aPos.x + 50, aPos.y - 30, { steps: 10 });
+  await page.mouse.up();
+  const aAfter = await page.evaluate(() => ({
+    ax: window.axio!.adapter.api.getXcoord("A"),
+    bx: window.axio!.adapter.api.getXcoord("B"),
+  }));
+  expect(aAfter.ax).toBeGreaterThan(aBefore.ax + 0.3);
+  expect(aAfter.bx).toBeGreaterThan(aBefore.bx + 0.3);
+
+  // Dragging B rotates both hidden drivers around A and updates C and the circumcircle
+  const cBefore = await page.evaluate(() => window.axio!.adapter.api.getXcoord("C"));
+  const bPos = await position(page, "B");
+  await page.mouse.move(bPos.x, bPos.y);
+  await page.mouse.down();
+  await page.mouse.move(bPos.x + 35, bPos.y - 45, { steps: 10 });
+  await page.mouse.up();
+  const cAfter = await page.evaluate(() => window.axio!.adapter.api.getXcoord("C"));
+  expect(Math.abs(cAfter - cBefore)).toBeGreaterThan(0.2);
+
+  // Clicking "Xóa liên kết" turns B and C into free independent points and removes hidden helpers
+  await page.getByRole("toolbar", { name: "Thao tác đối tượng" }).getByRole("button", { name: "Xóa liên kết" }).click();
+  const unlinked = await page.evaluate(() => {
+    const api = window.axio!.adapter.api;
+    return {
+      indA: api.isIndependent("A"),
+      indB: api.isIndependent("B"),
+      indC: api.isIndependent("C"),
+      moveB: api.isMoveable("B"),
+      moveC: api.isMoveable("C"),
+      hasD: api.exists("D"),
+      hasE: api.exists("E"),
+      hasLAE: api.exists("lAE"),
+      hasCirc: api.exists("circ") && api.isDefined("circ"),
+    };
+  });
+  expect(unlinked).toEqual({
+    indA: true,
+    indB: true,
+    indC: true,
+    moveB: true,
+    moveC: true,
+    hasD: false,
+    hasE: false,
+    hasLAE: false,
+    hasCirc: true,
+  });
+
+  // Now B can be dragged completely independently without moving A or C, while AB, BC, ABC, circ follow
+  const coordsBeforeFreeDrag = await page.evaluate(() => {
+    const api = window.axio!.adapter.api;
+    return {
+      ax: api.getXcoord("A"),
+      cx: api.getXcoord("C"),
+      ab: api.getValue("AB"),
+    };
+  });
+  const bPos2 = await position(page, "B");
+  await page.mouse.move(bPos2.x, bPos2.y);
+  await page.mouse.down();
+  await page.mouse.move(bPos2.x - 60, bPos2.y - 40, { steps: 10 });
+  await page.mouse.up();
+  const coordsAfterFreeDrag = await page.evaluate(() => {
+    const api = window.axio!.adapter.api;
+    return {
+      ax: api.getXcoord("A"),
+      cx: api.getXcoord("C"),
+      ab: api.getValue("AB"),
+      circDefined: api.isDefined("circ"),
+    };
+  });
+  expect(coordsAfterFreeDrag.ax).toBeCloseTo(coordsBeforeFreeDrag.ax, 4);
+  expect(coordsAfterFreeDrag.cx).toBeCloseTo(coordsBeforeFreeDrag.cx, 4);
+  expect(coordsAfterFreeDrag.ab).not.toBeCloseTo(coordsBeforeFreeDrag.ab, 1);
+  expect(coordsAfterFreeDrag.circDefined).toBe(true);
+});

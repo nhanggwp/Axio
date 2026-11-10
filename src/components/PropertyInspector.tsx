@@ -148,6 +148,20 @@ export function PropertyInspector({
             : "Đối tượng phụ thuộc · thay đổi qua đối tượng gốc"}
         {controls.length > 0 && ` · Kéo ${controls.join(" hoặc ")} để chỉnh hình.`}
       </small>
+      {controller.canUnlink([o.name]) && (
+        <button
+          type="button"
+          onClick={() => {
+            try {
+              controller.unlinkObjects([o.name]);
+            } catch (e) {
+              onError(e);
+            }
+          }}
+        >
+          Xóa liên kết
+        </button>
+      )}
       <p className="eyebrow">QUAN HỆ PHỤ THUỘC</p>
       <p className="definition">
         {o.definition || "Không có đối tượng gốc"}

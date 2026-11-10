@@ -12,7 +12,7 @@ type Shape = {
   name: string;
   points: ScreenPoint[];
   bounds: ScreenBounds;
-  kind: "point" | "path" | "polygon" | "circle";
+  kind: "point" | "path" | "polygon" | "circle" | "angle";
   center?: ScreenPoint;
   rx?: number;
   ry?: number;
@@ -165,7 +165,7 @@ export function screenShapes(
       }
     } else if (o.type === "angle" && pointRefs.length >= 3) {
       points = [point(pointRefs[1])];
-      kind = "point";
+      kind = "angle";
     }
     if (points.length)
       shapes.push({ name: o.name, points, kind, bounds: bounds(points) });
@@ -173,15 +173,17 @@ export function screenShapes(
   return shapes;
 }
 export function hitObject(shapes: Shape[], p: ScreenPoint) {
-  const points = shapes.filter((s) => s.kind === "point");
-  for (const s of [...points, ...shapes.filter((s) => s.kind !== "point")]
-    .reverse()
-    .sort((a, b) => Number(b.kind === "point") - Number(a.kind === "point"))) {
-    if (
-      s.kind === "point" &&
-      Math.hypot(p.x - s.points[0].x, p.y - s.points[0].y) <= 16
-    )
-      return s.name;
+  let closestPoint: { name: string; dist: number } | null = null;
+  for (const s of shapes) {
+    if (s.kind !== "point") continue;
+    const dist = Math.hypot(p.x - s.points[0].x, p.y - s.points[0].y);
+    if (dist <= 16 && (!closestPoint || dist <= closestPoint.dist)) {
+      closestPoint = { name: s.name, dist };
+    }
+  }
+  if (closestPoint) return closestPoint.name;
+  for (const s of [...shapes].reverse()) {
+    if (s.kind === "point") continue;
     if (
       s.kind === "circle" &&
       s.center &&
@@ -198,6 +200,11 @@ export function hitObject(shapes: Shape[], p: ScreenPoint) {
       s.kind === "polygon" &&
       s.points.length > 2 &&
       distance(p, s.points.at(-1)!, s.points[0]) < 7
+    )
+      return s.name;
+    if (
+      s.kind === "angle" &&
+      Math.hypot(p.x - s.points[0].x, p.y - s.points[0].y) <= 16
     )
       return s.name;
   }

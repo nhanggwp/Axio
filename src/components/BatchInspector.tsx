@@ -100,6 +100,15 @@ export function BatchInspector({
           }
         />
       </label>
+      {controller.canUnlink(controller.selectedNames) && (
+        <button
+          onClick={() =>
+            change(() => controller.unlinkObjects(controller.selectedNames))
+          }
+        >
+          Xóa liên kết
+        </button>
+      )}
       <button
         onClick={() =>
           change(() =>
