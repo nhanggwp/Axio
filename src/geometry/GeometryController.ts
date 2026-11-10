@@ -660,16 +660,38 @@ export class GeometryController {
     visit(name);
     return [...found].slice(0, 6);
   }
-  unlinkTargetPoints(names = this.selectedNames): string[] {
+  unlinkTargets(names = this.selectedNames): {
+    points: string[];
+    circles: string[];
+  } {
     const api = this.adapter.api;
     const seeds = names.filter((n) => api.exists(n));
-    if (!seeds.length) return [];
+    if (!seeds.length) return { points: [], circles: [] };
     const isLinkedPoint = (name: string) =>
       api.exists(name) &&
       api.getObjectType(name) === "point" &&
       !api.isIndependent(name);
+    const isLinkedCircle = (name: string) => {
+      if (
+        !api.exists(name) ||
+        api.getObjectType(name) !== "circle" ||
+        !api.getVisible(name)
+      ) {
+        return false;
+      }
+      const cmd = api.getCommandString(name, false);
+      if (!cmd) return false;
+      return geometryNames(cmd).some(
+        (ref) => ref !== name && api.exists(ref) && api.getVisible(ref),
+      );
+    };
+
+    if (seeds.every((n) => api.getObjectType(n) === "circle")) {
+      return { points: [], circles: seeds.filter(isLinkedCircle) };
+    }
 
     const comp = this.connectedComponent(seeds);
+    const circles = [...comp].filter(isLinkedCircle);
     const primaryVertices = new Set<string>();
     for (const o of this.objects) {
       if (!comp.has(o.name)) continue;
@@ -703,26 +725,34 @@ export class GeometryController {
       !seeds.some((n) => primaryVertices.has(n))
     ) {
       const direct = seeds.filter(isLinkedPoint);
-      if (direct.length) return [...new Set(direct)];
+      if (direct.length) return { points: [...new Set(direct)], circles };
     }
 
     if (primaryVertices.size > 0) {
-      return [...primaryVertices];
+      return { points: [...primaryVertices], circles };
     }
 
     const seedPoints = seeds.filter(isLinkedPoint);
-    if (seedPoints.length > 0) return [...new Set(seedPoints)];
+    if (seedPoints.length > 0) {
+      return { points: [...new Set(seedPoints)], circles };
+    }
 
-    return [...comp].filter((n) => api.getVisible(n) && isLinkedPoint(n));
+    return {
+      points: [...comp].filter((n) => api.getVisible(n) && isLinkedPoint(n)),
+      circles,
+    };
   }
   canUnlink(names = this.selectedNames): boolean {
-    return this.unlinkTargetPoints(names).length > 0;
+    const { points, circles } = this.unlinkTargets(names);
+    return points.length > 0 || circles.length > 0;
   }
   unlinkObjects(names = this.selectedNames): string[] {
-    const targets = this.unlinkTargetPoints(names);
-    if (!targets.length) return [];
+    const { points: targetPoints, circles: targetCircles } =
+      this.unlinkTargets(names);
+    if (!targetPoints.length && !targetCircles.length) return [];
     const api = this.adapter.api;
-    const targetSet = new Set(targets);
+    const targetSet = new Set(targetPoints);
+    const circleSet = new Set(targetCircles);
     const coords = new Map<string, { x: number; y: number }>();
     for (const name of targetSet) {
       if (api.exists(name) && api.getObjectType(name) === "point") {
@@ -732,6 +762,8 @@ export class GeometryController {
     const visibleBefore = new Set(
       this.objects.filter((o) => o.visible).map((o) => o.name),
     );
+    const usedLabels = new Set(api.getAllObjectNames());
+    const newCenters: string[] = [];
     this.mutate(() => {
       const doc = new DOMParser().parseFromString(
         this.adapter.snapshot(),
@@ -744,7 +776,7 @@ export class GeometryController {
         const out = cmd.querySelector("output");
         if (!out) continue;
         const outputs = [...out.attributes].map((a) => a.value);
-        if (outputs.some((o) => targetSet.has(o))) {
+        if (outputs.some((o) => targetSet.has(o) || circleSet.has(o))) {
           cmd.remove();
         }
       }
@@ -753,7 +785,7 @@ export class GeometryController {
         ...construction.querySelectorAll(":scope > expression"),
       ]) {
         const label = expr.getAttribute("label");
-        if (label && targetSet.has(label)) {
+        if (label && (targetSet.has(label) || circleSet.has(label))) {
           expr.remove();
         }
       }
@@ -783,11 +815,69 @@ export class GeometryController {
         el.querySelector("auxiliary")?.setAttribute("val", "false");
       }
 
+      for (const cName of circleSet) {
+        const el = [
+          ...construction.querySelectorAll(':scope > element[type="conic"]'),
+        ].find((e) => e.getAttribute("label") === cName);
+        const m = el?.querySelector("matrix");
+        if (!el || !m) continue;
+        const a0 = Number(m.getAttribute("A0"));
+        const cx = -Number(m.getAttribute("A4")) / a0;
+        const cy = -Number(m.getAttribute("A5")) / a0;
+        const r = Math.sqrt(
+          cx * cx + cy * cy - Number(m.getAttribute("A2")) / a0,
+        );
+        if (!Number.isFinite(cx) || !Number.isFinite(cy) || !Number.isFinite(r) || r <= 0) {
+          continue;
+        }
+        let idx = 1;
+        while (usedLabels.has(`O_${idx}`)) idx++;
+        const centerLabel = `O_${idx}`;
+        usedLabels.add(centerLabel);
+        newCenters.push(centerLabel);
+
+        const exprEl = doc.createElement("expression");
+        exprEl.setAttribute("label", centerLabel);
+        exprEl.setAttribute("exp", `(${cx}, ${cy})`);
+        exprEl.setAttribute("type", "point");
+        construction.insertBefore(exprEl, el);
+
+        const ptEl = doc.createElement("element");
+        ptEl.setAttribute("type", "point");
+        ptEl.setAttribute("label", centerLabel);
+        const showEl = doc.createElement("show");
+        showEl.setAttribute("object", "false");
+        showEl.setAttribute("label", "false");
+        ptEl.appendChild(showEl);
+        const auxEl = doc.createElement("auxiliary");
+        auxEl.setAttribute("val", "true");
+        ptEl.appendChild(auxEl);
+        const coordsEl = doc.createElement("coords");
+        coordsEl.setAttribute("x", String(cx));
+        coordsEl.setAttribute("y", String(cy));
+        coordsEl.setAttribute("z", "1.0");
+        ptEl.appendChild(coordsEl);
+        construction.insertBefore(ptEl, el);
+
+        const cmdEl = doc.createElement("command");
+        cmdEl.setAttribute("name", "Circle");
+        const inpEl = doc.createElement("input");
+        inpEl.setAttribute("a0", centerLabel);
+        inpEl.setAttribute("a1", String(Number(r.toFixed(6))));
+        cmdEl.appendChild(inpEl);
+        const outEl = doc.createElement("output");
+        outEl.setAttribute("a0", cName);
+        cmdEl.appendChild(outEl);
+        construction.insertBefore(cmdEl, el);
+      }
+
       const remainingCommands = [
         ...construction.querySelectorAll(":scope > command"),
       ];
       const needed = new Set<string>(visibleBefore);
       for (const name of targetSet) needed.add(name);
+      for (const name of circleSet) needed.add(name);
+      for (const name of newCenters) needed.add(name);
 
       let changed = true;
       while (changed) {
@@ -841,16 +931,26 @@ export class GeometryController {
 
       const nextXml = new XMLSerializer().serializeToString(doc);
       this.adapter.restore(nextXml);
-      for (const name of targetSet) {
+      for (const name of [...targetSet, ...newCenters]) {
         if (api.exists(name)) {
           api.setFixed(name, false, true);
         }
       }
+      for (const name of newCenters) {
+        if (api.exists(name)) {
+          api.setAuxiliary(name, true);
+          api.setVisible(name, false);
+        }
+      }
       this.adapter.hideDuplicateBoundaryLabels();
     });
-    this.drawingFeedback = `Đã xóa liên kết ${targets.join(", ")} · kéo tự do các điểm để chỉnh hình.`;
+    const allUnlinked = [...targetPoints, ...targetCircles];
+    if (this.selectedNames.length > 1) {
+      this.select(null);
+    }
+    this.drawingFeedback = `Đã xóa liên kết ${allUnlinked.join(", ")} · kéo tự do từng đối tượng.`;
     this.emit();
-    return targets;
+    return allUnlinked;
   }
   deletionImpact(names = this.selectedNames) {
     return affectedByDeletion(this.objects, names);

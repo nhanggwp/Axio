@@ -231,13 +231,14 @@ test("multi-selected figures with multiple hidden helpers allow dragging any poi
     hasCirc: true,
   });
 
-  // Now B can be dragged completely independently without moving A or C, while AB, BC, ABC, circ follow
+  // Now B can be dragged completely independently without moving A, C, or the unlinked circle circ
   const coordsBeforeFreeDrag = await page.evaluate(() => {
     const api = window.axio!.adapter.api;
     return {
       ax: api.getXcoord("A"),
       cx: api.getXcoord("C"),
       ab: api.getValue("AB"),
+      circEq: api.getValueString("circ", false),
     };
   });
   const bPos2 = await position(page, "B");
@@ -251,11 +252,13 @@ test("multi-selected figures with multiple hidden helpers allow dragging any poi
       ax: api.getXcoord("A"),
       cx: api.getXcoord("C"),
       ab: api.getValue("AB"),
+      circEq: api.getValueString("circ", false),
       circDefined: api.isDefined("circ"),
     };
   });
   expect(coordsAfterFreeDrag.ax).toBeCloseTo(coordsBeforeFreeDrag.ax, 4);
   expect(coordsAfterFreeDrag.cx).toBeCloseTo(coordsBeforeFreeDrag.cx, 4);
   expect(coordsAfterFreeDrag.ab).not.toBeCloseTo(coordsBeforeFreeDrag.ab, 1);
+  expect(coordsAfterFreeDrag.circEq).toBe(coordsBeforeFreeDrag.circEq);
   expect(coordsAfterFreeDrag.circDefined).toBe(true);
 });

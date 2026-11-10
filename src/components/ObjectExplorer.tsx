@@ -48,6 +48,7 @@ export function ObjectExplorer({
               .filter(
                 (o) =>
                   (types as readonly string[]).includes(o.type) &&
+                  !(o.auxiliary && !o.visible) &&
                   !isDuplicateBoundarySegment(o, controller.objects) &&
                   [o.name, o.displayName].some((name) => name?.toLowerCase().includes(search.toLowerCase())),
               )
