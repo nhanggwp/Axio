@@ -25,6 +25,7 @@ export async function askAssistant(
   validationFeedback?: { message: string; previous: AIReply },
   previewObjects?: GeometryObject[],
 ): Promise<AIReply> {
+  controller.captureHistory();
   const response = await fetch("/api/assist", {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
@@ -33,6 +34,8 @@ export async function askAssistant(
       selection: controller.selection,
       selections: controller.selectedNames,
       objects: controller.adapter.objects(),
+      view: {axes:controller.adapter.viewState().axes,grid:controller.adapter.viewState().grid},
+      history: { canUndo: controller.history.canUndo, canRedo: controller.history.canRedo },
       ...(previewObjects?.length ? { preview_objects: previewObjects } : {}),
       conversation: conversation
         .slice(-12)

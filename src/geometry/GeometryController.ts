@@ -1,3 +1,4 @@
+import { applyObjectLabel, hasMeasurementIntent, isMeasurementObject, measurementVisible, setMeasurementVisible } from "./segmentLabels";
 import { geometryNames } from "../../shared/geometryNames";
 import { GeoGebraAdapter } from "./GeoGebraAdapter";
 import { ConstructionHistory } from "./ConstructionHistory";
@@ -7,6 +8,8 @@ import { constructionKey, normalizeClientEvent } from "./GeometryState";
 import { SelectionManager, affectedByDeletion } from "./SelectionManager";
 import { selectionBounds } from "./ScreenProjection";
 import { isPolygonType } from "./triangleVertices";
+import { compileExpression, canEditExpression } from "./ExpressionInput";
+import { bindCircumcircleVertices, circumcircleBoundary, circleGeometry, projectOnCircle, type CircleBoundary } from "./CircleBoundary";
 import type { GeometryAction, GeometryObject, GeometryCheck } from "../../shared/actions";
 
 export type TransformHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "rotate";
@@ -45,6 +48,8 @@ export class GeometryController {
     wy0: number;
     moved: boolean;
     proxy?:
+      | { kind: "locked" }
+      | { kind: "circle_vertex"; target: string; x0: number; y0: number; boundary: CircleBoundary; prepared: boolean }
       | {
           kind: "direct_point";
           target: string;
@@ -61,6 +66,7 @@ export class GeometryController {
           angle0: number;
           allowScale: boolean;
           drivers: PointSnapshot[];
+          boundary?: CircleBoundary;
         }
       | { kind: "translate_group"; freePoints: PointSnapshot[]; pathPoints: PointSnapshot[] }
       | null;
@@ -80,6 +86,7 @@ export class GeometryController {
   } | null = null;
   constructor(readonly adapter: GeoGebraAdapter) {
     adapter.formatSegmentLabels();
+    adapter.formatPointLabels();
     adapter.hideDuplicateBoundaryLabels();
     this.history.reset(adapter.snapshot());
     this.saved = constructionKey(adapter.snapshot());
@@ -121,6 +128,7 @@ export class GeometryController {
   sync = () => {
     if (this.disposed) return;
     this.adapter.formatSegmentLabels();
+    this.adapter.formatPointLabels();
     this.objects = this.adapter.objects();
     this.selections.set(this.selectedNames, (n) => this.adapter.api.exists(n));
     const key = constructionKey(this.adapter.snapshot());
@@ -148,9 +156,12 @@ export class GeometryController {
     this.adapter.color(name, polygon ? "#C9E1E6" : "#23232D");
     a.setLineThickness(name, 2);
     if (polygon) a.setFilling(name, 0.18);
-    if (type === "point") a.setPointSize(name, 3);
-    a.setLabelVisible(name, ["point", "segment", "angle"].includes(type));
+    if (type === "point") { a.setPointSize(name, 4); a.setLabelStyle(name, this.adapter.viewState().axes ? 1 : 0); }
+    a.setLabelVisible(name, type === "point" || (type === "angle" && this.mode === 36));
+    if (type === "angle" && this.mode === 36) a.setLabelStyle(name, 2);
     if (type === "segment") {
+      applyObjectLabel(a, name, "name");
+      a.setLabelVisible(name, false);
       this.adapter.formatSegmentLabels([name]);
       this.adapter.hideDuplicateBoundaryLabels([name]);
     }
@@ -251,6 +262,30 @@ export class GeometryController {
   private resolveProxy(hit: string) {
     const api = this.adapter.api;
     if (!api.exists(hit)) return null;
+    // Explicit user locks must never fall through to dragging connected roots.
+    if (/<fixed\b[^>]*val="true"/.test(api.getXML(hit)))
+      return { kind: "locked" as const };
+    const boundary = api.getObjectType(hit) === "point" ? circumcircleBoundary(api, hit) : null;
+    if (boundary && boundary.vertices.every(name => api.isIndependent(name))) {
+      return { kind: "circle_vertex" as const, target: hit, x0: api.getXcoord(hit), y0: api.getYcoord(hit), boundary, prepared: false };
+    }
+    if (boundary) {
+      // Constrained polygons retain their shape: rotate their actual upstream
+      // controls around the circumcenter, never scale about another vertex.
+      const upstream = new Set<string>();
+      const visit = (name: string) => {
+        if (upstream.has(name) || !api.exists(name)) return;
+        upstream.add(name);
+        for (const ref of geometryNames(api.getCommandString(name, false)).slice(1)) visit(ref);
+      };
+      visit(boundary.name);
+      const { freePoints, pathPoints } = this.collectGroupSnapshots(upstream);
+      const drivers = [...freePoints, ...pathPoints];
+      if (drivers.length && drivers.every(p => !/<fixed\b[^>]*val="true"/.test(api.getXML(p.name)))) {
+        return { kind: "rotate_drivers" as const, anchor: boundary.name, ax: boundary.x, ay: boundary.y, r0: boundary.r, angle0: Math.atan2(api.getYcoord(hit) - boundary.y, api.getXcoord(hit) - boundary.x), allowScale: false, drivers, boundary };
+      }
+      return { kind: "locked" as const };
+    }
     if (this.isDirectPoint(hit)) {
       const comp = this.connectedComponent([hit]);
       const hiddenHelpers = api.isIndependent(hit)
@@ -389,7 +424,26 @@ export class GeometryController {
     if (proxy && host) {
       const api = this.adapter.api;
       const { wx, wy } = this.screenToWorld(x, y, host);
-      if (proxy.kind === "direct_point") {
+      if (proxy.kind === "circle_vertex") {
+        const before = this.adapter.snapshot();
+        this.paused = true;
+        try {
+          if (!proxy.prepared) {
+            this.history.push(before);
+            bindCircumcircleVertices(api, proxy.boundary);
+            proxy.prepared = true;
+          }
+          const target = projectOnCircle(proxy.boundary, proxy.x0 + wx - this.pointer.wx0, proxy.y0 + wy - this.pointer.wy0);
+          if (target) api.setCoords(proxy.target, target.x, target.y);
+        } catch {
+          this.adapter.restore(before);
+          this.pointer.proxy = { kind: "locked" };
+          this.drawingFeedback = "Không thể trượt đỉnh này mà vẫn giữ các ràng buộc. Hình được giữ nguyên.";
+        } finally {
+          this.paused = false;
+        }
+        this.sync();
+      } else if (proxy.kind === "direct_point") {
         const dx = wx - this.pointer.wx0;
         const dy = wy - this.pointer.wy0;
         this.paused = true;
@@ -415,6 +469,7 @@ export class GeometryController {
             : 1;
         const cos = Math.cos(da) * scale;
         const sin = Math.sin(da) * scale;
+        const before = proxy.boundary ? this.adapter.snapshot() : null;
         this.paused = true;
         try {
           for (const d of proxy.drivers) {
@@ -426,6 +481,15 @@ export class GeometryController {
               proxy.ax + dx * cos - dy * sin,
               proxy.ay + dx * sin + dy * cos,
             );
+          }
+          if (proxy.boundary) {
+            const actual = circleGeometry(api, proxy.boundary.name);
+            const tolerance = 1e-7 * Math.max(1, proxy.boundary.r);
+            if (!actual || Math.hypot(actual.x - proxy.ax, actual.y - proxy.ay) > tolerance || Math.abs(actual.r - proxy.r0) > tolerance) {
+              if (before) this.adapter.restore(before);
+              this.pointer.proxy = { kind: "locked" };
+              this.drawingFeedback = "Điểm có thêm ràng buộc; giữ nguyên đường tròn và hình hiện tại.";
+            }
           }
         } finally {
           this.paused = false;
@@ -983,6 +1047,7 @@ export class GeometryController {
     try {
       fn();
       this.adapter.formatSegmentLabels();
+      this.adapter.formatPointLabels();
       this.history.push(this.adapter.snapshot());
     } catch (e) {
       this.adapter.restore(before);
@@ -993,16 +1058,81 @@ export class GeometryController {
     }
   }
   apply(actions: GeometryAction[], checks: GeometryCheck[] = []) {
+    const history = actions.find((action) => action.type === "history");
+    if (history?.type === "history") {
+      if (actions.length !== 1 || checks.length)
+        throw new Error("Hoàn tác/làm lại phải là một thao tác lịch sử riêng.");
+      this.historyTarget(history.direction);
+      if (history.direction === "undo") this.undo();
+      else this.redo();
+      return;
+    }
     // The AI contract stays bounded; manual batch styling can cover the full selection.
     if (actions.length > 32 && actions.some((a) => a.type !== "style"))
       throw new Error("Tối đa 32 thao tác dựng hình mỗi lần.");
     this.mutate(() => {
       for (let i = 0; i < actions.length; i += 32)
-        executeActions(this.adapter, actions.slice(i, i + 32));
+        executeActions(this.adapter, actions.slice(i, i + 32), i + 32 >= actions.length ? checks : []);
       validateGeometry(this.adapter, checks);
     });
   }
+  get canMeasure() {
+    return this.objects.some(o => ["segment", "angle", "text"].includes(o.type) && isMeasurementObject(this.adapter.api,o.name));
+  }
+  get measurementsVisible() {
+    return this.objects.some(o => ["segment", "angle", "text"].includes(o.type) && measurementVisible(this.adapter.api, o.name));
+  }
+  setMeasurementsVisible(show: boolean) {
+    this.mutate(() => {
+      const api=this.adapter.api;
+      const measurable=this.objects.filter(o => isMeasurementObject(api,o.name));
+      const requested=measurable.filter(o => hasMeasurementIntent(api,o.name));
+      for (const o of show && requested.length ? requested : measurable)
+        if (show || measurementVisible(api,o.name)) setMeasurementVisible(api,o.name,show);
+    });
+  }
+  setCoordinateAxes(visible: boolean) {
+    this.mutate(() => this.adapter.setCoordinateAxes(visible));
+    if (visible) this.adapter.resetView();
+    this.sync();
+  }
   captureHistory() { this.flush(); return this.history.capture(); }
+  enterExpression(input: string) {
+    const api = this.adapter.api, compiled = compileExpression(input, api);
+    if (compiled.label && api.exists(compiled.label)) {
+      if (!canEditExpression(api, compiled.label)) throw new Error("Đối tượng này phụ thuộc phép dựng. Hãy sửa đối tượng gốc hoặc xóa liên kết trước.");
+      if (/<fixed\b[^>]*val="true"/.test(api.getXML(compiled.label))) throw new Error("Đối tượng đang khóa. Hãy mở khóa trước khi sửa công thức.");
+    }
+    const before = new Map(api.getAllObjectNames().map(name => [name, api.getObjectType(name)]));
+    let labels: string[] = [];
+    this.mutate(() => {
+      labels = String(api.evalCommandGetLabels(compiled.command) || "").split(",").map(name => name.trim()).filter(Boolean);
+      if (!labels.length) throw new Error("GeoGebra không nhận công thức này. Hãy kiểm tra dấu ngoặc và các tham số.");
+      for (const [name, type] of before) {
+        if (!api.exists(name) || api.getObjectType(name) !== type) throw new Error("Công thức làm thay đổi loại hoặc xóa đối tượng đang có. Hình cũ được giữ nguyên.");
+      }
+      for (const name of api.getAllObjectNames()) {
+        if (!api.isDefined(name) || (api.getObjectType(name) === "numeric" && !Number.isFinite(api.getValue(name)))) throw new Error("Công thức tạo giá trị không xác định. Hình cũ được giữ nguyên.");
+        if (!before.has(name)) {
+          this.adapter.color(name, "#23232D"); api.setLineThickness(name, 2); api.setLabelVisible(name, api.getObjectType(name) === "point"); api.setFixed(name, false, true);
+        }
+      }
+      // Geometry mode defaults algebra-created graphs to fixed again on redefine.
+      // An existing explicit lock was checked above; keep editable inputs editable.
+      for (const name of labels) api.setFixed(name, false, true);
+    });
+    this.setMode(0);
+    this.selectMany(labels);
+    if (labels.some(name => api.getObjectType(name) !== "numeric")) this.adapter.resetView();
+    this.sync();
+    return labels;
+  }
+  historyTarget(direction: "undo" | "redo") {
+    this.flush();
+    const xml = this.history.peek(direction);
+    if (!xml) throw new Error(direction === "undo" ? "Không còn thao tác để hoàn tác." : "Không còn thao tác để làm lại.");
+    return xml;
+  }
   newDocument() {
     this.documentGeneration++;
     this.mutate(() => {
@@ -1045,6 +1175,7 @@ export class GeometryController {
       this.adapter.api.setPerspective("G");
       this.adapter.api.setRounding("2");
       this.adapter.formatSegmentLabels();
+      this.adapter.formatPointLabels();
       this.adapter.hideDuplicateBoundaryLabels();
       this.documentGeneration++;
       this.history.reset(this.adapter.snapshot());

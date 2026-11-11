@@ -31,7 +31,7 @@ export function DocumentDialog({
   setTitle: (title: string) => void;
   onClose: () => void;
   onError: (error: unknown) => void;
-  kind: "documents" | "export";
+  kind: "documents" | "export" | "share";
   onNew: () => void;
   onLocalOpen: () => void;
 }) {
@@ -46,11 +46,20 @@ export function DocumentDialog({
   });
   const [replace, setReplace] = useState<(() => void) | null>(null);
   const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [center, setCenter] = useState(true);
+  const [grid, setGrid] = useState(() => controller.adapter.viewState().grid);
+  const [axes, setAxes] = useState(() => controller.adapter.viewState().axes);
+  const exportOptions = { center, grid, axes };
   const run = async (fn: () => void | Promise<void>) => {
+    if (busy) return;
+    setBusy(true);
     try {
       await fn();
     } catch (e) {
       onError(e);
+    } finally {
+      setBusy(false);
     }
   };
   const replacing = (fn: () => void) => {
@@ -68,10 +77,22 @@ export function DocumentDialog({
         className="document-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label={kind === "export" ? "Xuất hình" : "Lưu và mở"}
+        aria-label={
+          kind === "share"
+            ? "Chia sẻ hình"
+            : kind === "export"
+              ? "Xuất hình"
+              : "Lưu và mở"
+        }
       >
         <header>
-          <h2>{kind === "export" ? "Xuất hình dựng" : "Lưu và mở tài liệu"}</h2>
+          <h2>
+            {kind === "share"
+              ? "Chia sẻ hình dựng"
+              : kind === "export"
+                ? "Xuất hình dựng"
+                : "Lưu và mở tài liệu"}
+          </h2>
           <IconButton icon="close" label="Đóng hộp thoại" onClick={onClose} />
         </header>
         {kind === "documents" ? (
@@ -196,7 +217,74 @@ export function DocumentDialog({
         ) : (
           <>
             <p>Giữ đầy đủ quan hệ hình học bằng tệp GeoGebra.</p>
+            <div className="export-options">
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={center}
+                  disabled={busy}
+                  onChange={(e) => setCenter(e.target.checked)}
+                />
+                Căn giữa hình khi xuất
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={grid}
+                  disabled={busy}
+                  onChange={(e) => setGrid(e.target.checked)}
+                />
+                Lưới trong ảnh
+              </label>
+              <label className="check">
+                <input
+                  type="checkbox"
+                  checked={axes}
+                  disabled={busy}
+                  onChange={(e) => setAxes(e.target.checked)}
+                />
+                Trục tọa độ trong ảnh
+              </label>
+            </div>
+            {kind === "share" && (
+              <>
+                <p>
+                  Chép ảnh để dán vào tin nhắn, hoặc tải ảnh để gửi. Hình không
+                  được tự đăng công khai.
+                </p>
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    void run(async () => {
+                      if (!navigator.clipboard?.write || !window.ClipboardItem)
+                        throw new Error(
+                          "Trình duyệt chưa hỗ trợ chép ảnh. Hãy tải PNG để gửi.",
+                        );
+                      const image = controller.adapter
+                        .exportPNG(exportOptions)
+                        .then((data) =>
+                          fetch("data:image/png;base64," + data).then(
+                            (response) => response.blob(),
+                          ),
+                        );
+                      try {
+                        await navigator.clipboard.write([
+                          new ClipboardItem({ "image/png": image }),
+                        ]);
+                      } finally {
+                        // A permission rejection can happen before the image finishes rendering.
+                        await image.catch(() => {});
+                      }
+                      setNotice("Đã chép ảnh. Bạn có thể dán vào tin nhắn.");
+                    })
+                  }
+                >
+                  Chép ảnh vào clipboard
+                </button>
+              </>
+            )}
             <button
+              disabled={busy}
               onClick={() =>
                 void run(async () =>
                   download(
@@ -210,11 +298,12 @@ export function DocumentDialog({
               Tải xuống .ggb · chỉnh sửa được
             </button>
             <button
+              disabled={busy}
               onClick={() =>
-                void run(() =>
+                void run(async () =>
                   download(
                     "data:image/png;base64," +
-                      controller.adapter.api.getPNGBase64(2, false),
+                      (await controller.adapter.exportPNG(exportOptions)),
                     title + ".png",
                   ),
                 )
@@ -223,15 +312,14 @@ export function DocumentDialog({
               Ảnh PNG · độ phân giải 2×
             </button>
             <button
+              disabled={busy}
               onClick={() =>
-                controller.adapter.api.exportSVG((svg) => {
-                  if (svg)
-                    download(
-                      new Blob([svg], { type: "image/svg+xml" }),
-                      title + ".svg",
-                    );
-                  else
-                    onError(new Error("Không thể xuất SVG cho góc nhìn này."));
+                void run(async () => {
+                  const svg = await controller.adapter.exportSVG(exportOptions);
+                  download(
+                    new Blob([svg], { type: "image/svg+xml" }),
+                    title + ".svg",
+                  );
                 })
               }
             >
@@ -239,6 +327,7 @@ export function DocumentDialog({
             </button>
           </>
         )}
+        {busy && <p role="status">Đang chuẩn bị tệp…</p>}
         {notice && <p role="status">{notice}</p>}
         {replace && (
           <div className="error-card">

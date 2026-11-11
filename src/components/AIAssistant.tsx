@@ -35,6 +35,7 @@ export function AIAssistant({
   onBusyChange: (busy: boolean) => void;
   suspended: boolean;
 }) {
+  const [dailyLimitEnabled, setDailyLimitEnabled] = useState(true);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const agent = useAgentConversation(
       controller,
@@ -74,6 +75,7 @@ export function AIAssistant({
       .then((j) => {
         const accepted = !Array.isArray(j.allowedOrigins) || j.allowedOrigins.includes(location.origin);
         setConfigured(!!j.configured && accepted);
+        setDailyLimitEnabled(j.dailyLimitEnabled !== false);
         if (!accepted) agent.setError(`Địa chỉ truy cập chưa khớp với máy chủ. Hãy mở Axio tại ${j.allowedOrigins[0]}.`);
       })
       .catch(() => {
@@ -263,6 +265,7 @@ export function AIAssistant({
               ? "DeepSeek · Đã cấu hình"
               : "DeepSeek · Chưa kết nối"}
         </div>
+        {configured && !dailyLimitEnabled && <small className="quota-status">Thử nghiệm · Không giới hạn lượt/ngày</small>}
         <form
           className="composer"
           onSubmit={(e) => {

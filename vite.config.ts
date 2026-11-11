@@ -14,6 +14,8 @@ export default defineConfig(({ mode }) => {
   server: {
     port: frontendPort,
     strictPort: true,
+    // Playwright traces contain HTML snapshots; writing them must not reload Axio.
+    watch: { ignored: ["**/axio-test-results/**", "**/test-results/**", "**/playwright-report/**", "**/.cache/**", "**/docs/**"] },
     fs: {
       deny: [
         "**/.env*",

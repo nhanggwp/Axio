@@ -93,3 +93,61 @@ describe("streamed agent contract", () => {
     expect(repaired.messages.at(-3).content).toContain(body.request);
   });
 });
+
+describe("plan namespace and history recovery", () => {
+  it("repairs the recorded circle/center name collision before an unusable preview reaches the client", async () => {
+    const request = requestSchema.parse({request:"Circle centered at O through P",selection:null,objects:[],conversation:[]});
+    const invalid={status:"ready_to_preview",message:"Đề xuất đường tròn",actions:[{type:"point",label:"O",x:0,y:0},{type:"point",label:"P",x:4,y:0},{type:"construct",kind:"circle",label:"O",refs:["O","P"]}],checks:[{kind:"on_circle",refs:["P","O"]},{kind:"dependent",refs:["O"]}]};
+    const corrected={...invalid,actions:[...invalid.actions.slice(0,2),{...invalid.actions[2],label:"c"}],checks:[{kind:"on_circle",refs:["P","c"]},{kind:"dependent",refs:["c"]}]};
+    const fetch=vi.spyOn(globalThis,"fetch").mockResolvedValueOnce(provider([JSON.stringify(invalid)])).mockResolvedValueOnce(provider([JSON.stringify(corrected)]));
+    const result=await runAgent(request,config,{onProgress:()=>{}});
+    expect(result.actions).toEqual(corrected.actions);
+    expect(result.checks).toEqual(corrected.checks);
+    expect(JSON.parse(JSON.parse(fetch.mock.calls[1][1]!.body as string).messages.at(-1).content).validation_feedback).toContain("Tên O");
+  });
+  it("passes real history availability to the model and rejects unavailable history actions", async () => {
+    const request=requestSchema.parse({...body,history:{canUndo:false,canRedo:false}});
+    const fetch=vi.spyOn(globalThis,"fetch").mockResolvedValueOnce(provider([JSON.stringify({status:"ready_to_preview",message:"Hoàn tác",actions:[{type:"history",direction:"undo"}]})])).mockResolvedValueOnce(provider([JSON.stringify({status:"explanation",message:"Không còn thao tác để hoàn tác.",actions:[]})]));
+    expect((await runAgent(request,config,{onProgress:()=>{}})).status).toBe("explanation");
+    expect(JSON.parse(JSON.parse(fetch.mock.calls[0][1]!.body as string).messages.at(-1).content).history).toEqual({canUndo:false,canRedo:false});
+    const plan={status:"ready_to_preview",message:"Xem trước hoàn tác",actions:[{type:"history",direction:"undo"}]};
+    fetch.mockResolvedValue(provider([JSON.stringify(plan)]));
+    expect((await runAgent({...request,history:{canUndo:true,canRedo:false}},config,{onProgress:()=>{}})).actions).toEqual(plan.actions);
+  });
+});
+
+it('allows two bounded repairs with diagnostics while never exposing invalid actions', async()=>{
+  const invalid=JSON.stringify({status:'ready_to_preview',message:'Đề xuất',actions:[{type:'javascript',code:'bad'}]});
+  const valid=JSON.stringify({status:'explanation',message:'Không thay đổi hình.',actions:[]});
+  const fetch=vi.spyOn(globalThis,'fetch').mockResolvedValueOnce(provider([invalid])).mockResolvedValueOnce(provider([invalid])).mockResolvedValueOnce(provider([valid]));
+  const diagnostics:{attempt:number;issues:unknown}[]=[];
+  const reply=await runAgent(body,config,{onProgress:()=>{},onValidationFailure:e=>diagnostics.push(e)});
+  expect(reply.actions).toEqual([]);expect(fetch).toHaveBeenCalledTimes(3);expect(diagnostics.map(d=>d.attempt)).toEqual([1,2]);
+});
+
+it('retries an empty completed provider stream within the same bounded request',async()=>{
+  const fetch=vi.spyOn(globalThis,'fetch').mockResolvedValueOnce(provider([])).mockResolvedValueOnce(provider([JSON.stringify({status:'explanation',message:'Đã nhận đủ nội dung.',actions:[]})]));
+  const diagnostics:{attempt:number;issues:unknown}[]=[];
+  const result=await runAgent(body,config,{onProgress:()=>{},onValidationFailure:e=>diagnostics.push(e)});
+  expect(result.message).toBe('Đã nhận đủ nội dung.');expect(fetch).toHaveBeenCalledTimes(2);expect(diagnostics[0]).toMatchObject({issues:{type:'provider_retry'}});
+});
+it('does not retry invalid credentials or an aborted provider request',async()=>{
+  const fetch=vi.spyOn(globalThis,'fetch').mockResolvedValue(new Response('',{status:401}));
+  await expect(runAgent(body,config,{onProgress:()=>{}})).rejects.toThrow('Khóa DeepSeek');expect(fetch).toHaveBeenCalledTimes(1);
+  fetch.mockClear();const abort=new AbortController();abort.abort();fetch.mockRejectedValue(abort.signal.reason);
+  await expect(runAgent(body,config,{signal:abort.signal,onProgress:()=>{}})).rejects.toThrow();expect(fetch).toHaveBeenCalledTimes(1);
+});
+it('can correct a reversed spatial check while retaining the requested lengths',async()=>{
+ const previous=replySchema.parse({status:'ready_to_preview',message:'Đề xuất',actions:[{type:'move',target:'A',x:0,y:2}],checks:[{kind:'coordinate_order',refs:['A','B'],axis:'y'},{kind:'distance',refs:['B','C'],value:3}]});
+ const corrected=replySchema.parse({...previous,checks:[{kind:'coordinate_order',refs:['B','A'],axis:'y'},{kind:'distance',refs:['B','C'],value:3}]});
+ const request=requestSchema.parse({...body,request:'Đưa A lên phía trên B.',validation_feedback:{message:'A phải ở bên dưới B; thực tế y: 2, 0. Check vị trí đang ngược với yêu cầu A lên trên B.',previous}});
+ const fetch=vi.spyOn(globalThis,'fetch').mockResolvedValueOnce(provider([JSON.stringify({...corrected,checks:[corrected.checks[0],{kind:'distance',refs:['B','C'],value:4}]})])).mockResolvedValueOnce(provider([JSON.stringify(corrected)]));
+ const reply=await runAgent(request,config,{onProgress:()=>{}});
+ expect(fetch).toHaveBeenCalledTimes(2);expect(reply.checks).toEqual(corrected.checks);
+});
+it('allows a coordinate frame origin and one movable point without demanding a second control point',async()=>{
+ const plan={status:'ready_to_preview',message:'Hệ trục và A',actions:[{type:'view',axes:true,grid:true},{type:'construct',kind:'intersection',label:'O',refs:['xAxis','yAxis'],auxiliary:false},{type:'point',label:'A',x:2,y:3,auxiliary:false}],checks:[{kind:'dependent',refs:['O']},{kind:'moveable',refs:['A']}]};
+ const fetch=vi.spyOn(globalThis,'fetch').mockResolvedValueOnce(provider([JSON.stringify(plan)]));
+ const result=await runAgent(requestSchema.parse({...body,objects:[],request:'Vẽ Oxy và điểm A(2;3).'}),config,{onProgress:()=>{}});
+ expect(result.status).toBe('ready_to_preview');expect(fetch).toHaveBeenCalledTimes(1);
+});

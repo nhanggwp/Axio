@@ -5,7 +5,7 @@ async function ready(page: Page) {
   await page.waitForFunction(() => !!window.axio, undefined, { timeout: 60000 });
   await expect(page.locator(".session-loading")).toBeHidden();
 }
-test("native polygon edges show endpoint names and dynamic lengths without changing their IDs", async ({ page }) => {
+test("native polygon edges hide measurements until requested and retain dynamic endpoint captions", async ({ page }) => {
   await ready(page);
   await page.evaluate(() => {
     const api = window.axio!.adapter.api;
@@ -15,6 +15,8 @@ test("native polygon edges show endpoint names and dynamic lengths without chang
   await expect(ac).toBeVisible();
   const id = await page.evaluate(() => window.axio!.objects.find((o) => o.type === "segment" && o.displayName === "AC")!.name);
   expect(id).not.toBe("AC");
+  expect(await page.evaluate(name => window.axio!.objects.find(o => o.name === name)!.labelVisible,id)).toBe(false);
+  await page.getByRole("button", {name:"Ẩn / hiện số đo",exact:true}).click();
   expect(await page.evaluate((name) => { const api = window.axio!.adapter.api; return { caption: api.getCaption(name, true), style: api.getLabelStyle(name), visible: window.axio!.objects.find((o) => o.name === name)!.labelVisible }; }, id)).toEqual({ caption: "AC = 5", style: 3, visible: true });
   await page.evaluate(() => window.axio!.apply([{ type: "move", target: "C", x: 0, y: 7 }]));
   await expect(page.locator(".explorer").getByRole("button", { name: "AC 7", exact: true })).toBeVisible();

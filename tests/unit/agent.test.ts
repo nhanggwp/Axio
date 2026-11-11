@@ -154,3 +154,19 @@ describe("agent state contract", () => {
       }).success,
     ).toBe(true));
 });
+
+describe('circle move capabilities', () => {
+  const obj = (name: string, type: string, definition = '') => ({name,type,definition,value:'',independent:type==='point',moveable:true,visible:true,color:'#23232D'});
+  it('offers in-place movement for three free vertices of a visible circumcircle', async () => {
+    const {circleSlideBindings,planConflict} = await import('../../server/services/agent');
+    const body = request({objects:[obj('A','point'),obj('B','point'),obj('C','point'),obj('c','circle','Circle[A, B, C]')]});
+    expect(circleSlideBindings(body)).toEqual([{circle:'c',vertices:['A','B','C'],action:'move',preserves:['center','radius','other_vertices']}]);
+    const rebuilding=replySchema.parse({status:'ready_to_preview',message:'Đề xuất',actions:[{type:'construct',kind:'circumcircle',label:'c',refs:['A','B','C']}]});
+    expect(planConflict(rebuilding,body)).toContain('move');
+  });
+  it('does not turn a center/radius handle or hidden construction circle into a sliding boundary', async () => {
+    const {circleSlideBindings} = await import('../../server/services/agent');
+    expect(circleSlideBindings(request({objects:[obj('O','point'),obj('P','point'),obj('c','circle','Circle[O, P]')]}))).toEqual([]);
+    expect(circleSlideBindings(request({objects:[obj('A','point'),obj('B','point'),obj('C','point'),{...obj('c','circle','Circle[A, B, C]'),visible:false}]}))).toEqual([]);
+  });
+});

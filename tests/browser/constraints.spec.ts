@@ -143,3 +143,10 @@ test("intersection selects one named branch instead of silently producing suffix
   })).toBeCloseTo(4, 10);
   expect(await page.evaluate(() => window.axio!.adapter.api.exists("I_1"))).toBe(false);
 });
+
+test('apply uses the same dimensional checks as preview when a ratio is rounded',async({page})=>{
+ await page.goto('/');await page.waitForFunction(()=>!!window.axio,undefined,{timeout:60000});await expect(page.locator('.session-loading')).toBeHidden();
+ const result=await page.evaluate(()=>{const c=window.axio!;c.apply([{type:'point',label:'A',x:0,y:0},{type:'point',label:'B',x:3,y:0},{type:'construct',kind:'rotate',label:'P',refs:['B','A'],value:90},{type:'construct',kind:'dilate',label:'C',refs:['P','A'],value:1.333333},{type:'construct',kind:'segment',label:'AC',refs:['A','C']}],[{kind:'distance',refs:['A','C'],value:4}]);return{x:c.adapter.api.getXcoord('C'),y:c.adapter.api.getYcoord('C'),length:c.adapter.api.getValue('AC')};});
+ expect(result.x).toBeCloseTo(0,8);expect(result.y).toBeCloseTo(4,8);expect(result.length).toBeCloseTo(4,8);
+ const rejected=await page.evaluate(()=>{const c=window.axio!,before=c.adapter.api.getAllObjectNames();try{c.apply([{type:'construct',kind:'dilate',label:'D',refs:['P','A'],value:1.2}],[{kind:'distance',refs:['A','D'],value:4}]);return false;}catch{return JSON.stringify(c.adapter.api.getAllObjectNames())===JSON.stringify(before);}});expect(rejected).toBe(true);
+});

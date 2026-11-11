@@ -1,3 +1,4 @@
+import { isMeasurementObject, measurementVisible, setMeasurementVisible } from "../geometry/segmentLabels";
 import { geometryNames } from "../../shared/geometryNames";
 import { supportsStroke } from "../geometry/GeometryState";
 import { useState } from "react";
@@ -235,6 +236,7 @@ export function PropertyInspector({
           </select>
         </label>
       </div>
+      {isMeasurementObject(controller.adapter.api,o.name) && <label className="check"><input type="checkbox" checked={measurementVisible(controller.adapter.api,o.name)} onChange={e => change(() => setMeasurementVisible(controller.adapter.api,o.name,e.target.checked))}/>Hiện số đo</label>}
       <label className="check">
         <input
           type="checkbox"
@@ -264,7 +266,7 @@ export function PropertyInspector({
         <label className="check">
           <input
             type="checkbox"
-            checked={!o.moveable}
+            checked={/<fixed\b[^>]*val="true"/.test(controller.adapter.api.getXML(o.name))}
             onChange={(e) =>
               change(() =>
                 controller.adapter.api.setFixed(o.name, e.target.checked, true),

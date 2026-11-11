@@ -1339,3 +1339,15 @@ button.welcome-start:hover:not(:disabled) { background: var(--cyan); border-colo
   min-width: 32px;
   max-width: 72px;
 }
+
+/* Reserve a real input row; the formula field does not cover plotted objects. */
+.main-engine, .preview-engine { bottom: 52px; }
+.canvas-bottom { bottom: 62px; }
+.equation-input { position: absolute; bottom: 0; left: 0; right: 0; z-index: 18; min-height: 52px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--border); background: var(--surface); }
+.equation-symbol { font-size: 23px; color: var(--purple); }
+.equation-input input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--border); border-radius: 5px; background: white; }
+.equation-input button { white-space: nowrap; padding: 8px 10px; }
+.equation-feedback:empty { display: none; }
+.equation-feedback { position: absolute; bottom: calc(100% + 6px); left: 12px; max-width: calc(100% - 24px); padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 5px; font-size: 13px; }
+.equation-feedback.error { border-color: var(--pink); color: var(--ink); }
+@media(max-width:700px) { .equation-input button[type="button"] { max-width: 95px; white-space: normal; font-size: 11px; padding: 5px; } .equation-input { gap: 5px; padding: 7px; } }

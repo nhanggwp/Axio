@@ -106,6 +106,9 @@ export function SelectionInteractions({
         return;
       }
       if (hit) return;
+      // Native curves/conics have engine-owned hit regions; let GeoGebra select
+      // and drag them instead of swallowing the click as empty-canvas marquee.
+      if (controller.objects.some(o => o.visible && ["function", "function_nvar", "implicitpoly", "implicitcurve", "curve", "conic", "ellipse", "hyperbola", "parabola"].includes(o.type))) return;
       e.preventDefault();
       e.stopPropagation();
       start.current = {
@@ -210,9 +213,12 @@ export function SelectionInteractions({
         e.key.toLowerCase() === "a" &&
         node.contains(document.activeElement) &&
         !(document.activeElement instanceof HTMLInputElement) &&
-        !(document.activeElement instanceof HTMLTextAreaElement)
+        !(document.activeElement instanceof HTMLTextAreaElement) &&
+        !(document.activeElement instanceof HTMLSelectElement) &&
+        !document.activeElement?.closest("[contenteditable=true]")
       ) {
         e.preventDefault();
+        e.stopPropagation();
         controller.selectMany(
           controller.objects.filter((o) => o.visible).map((o) => o.name),
         );
@@ -246,7 +252,7 @@ export function SelectionInteractions({
     node.addEventListener("pointercancel", up, true);
     node.addEventListener("wheel", wheel, { passive: false });
     node.addEventListener("contextmenu", context, true);
-    window.addEventListener("keydown", cancel);
+    window.addEventListener("keydown", cancel, true);
     return () => {
       node.removeEventListener("pointerdown", down, true);
       node.removeEventListener("pointermove", move, true);
@@ -254,7 +260,7 @@ export function SelectionInteractions({
       node.removeEventListener("pointercancel", up, true);
       node.removeEventListener("wheel", wheel);
       node.removeEventListener("contextmenu", context, true);
-      window.removeEventListener("keydown", cancel);
+      window.removeEventListener("keydown", cancel, true);
     };
   }, [controller, disabled, host]);
   if (!controller || !host.current || disabled) return null;
@@ -297,7 +303,8 @@ export function SelectionInteractions({
           .map((target) => ({ type: "style", target, ...props })),
       ),
     );
-  const topOffset = showTransformBox ? TRANSFORM_PAD + 64 : 52;
+  const hasCoordinateLabel = selectedObjects.some(o => o.type === "point" && o.labelVisible && controller.adapter.api.getLabelStyle(o.name) === 1);
+  const topOffset = Math.max(showTransformBox ? TRANSFORM_PAD + 64 : 52, hasCoordinateLabel ? 88 : 0);
   const left = bounds
     ? Math.max(
         rect.left + 8,
@@ -305,7 +312,9 @@ export function SelectionInteractions({
       )
     : 0;
   const top = bounds
-    ? Math.max(rect.top + 60, Math.min(bounds.top - topOffset, rect.bottom - 50))
+    ? bounds.top - topOffset >= rect.top + 60
+      ? bounds.top - topOffset
+      : Math.min(bounds.bottom + 18, rect.bottom - 50)
     : 0;
   return (
     <>

@@ -53,6 +53,7 @@ export async function createApplication(config: ServerConfig) {
   app.get("/api/status", (_req, res) =>
     res.json({
       configured: !!config.deepseekKey,
+      dailyLimitEnabled: config.aiDailyLimitEnabled !== false,
       model: config.deepseekModel,
       emailConfigured: mailer.configured,
       allowedOrigins,
@@ -123,7 +124,7 @@ export async function createApplication(config: ServerConfig) {
         limit = subject.startsWith("user:")
           ? config.userDailyLimit
           : config.guestDailyLimit;
-      const allowed = db.transaction(() => {
+      const allowed = config.aiDailyLimitEnabled === false || db.transaction(() => {
         const row = db
           .prepare("SELECT count FROM ai_usage WHERE subject=? AND day=?")
           .get(subject, day) as { count: number } | undefined;
@@ -153,7 +154,12 @@ export async function createApplication(config: ServerConfig) {
         res.flushHeaders();
       }
       try {
-        const reply = await runAgent(body.data, config, { signal: abort.signal, onProgress: streaming ? emit : undefined });
+        const reply = await runAgent(body.data, config, {
+          signal: abort.signal,
+          onProgress: streaming ? emit : undefined,
+          // Structural diagnostics only: never log provider credentials or raw chat.
+          onValidationFailure: config.production ? undefined : (diagnostic) => console.warn("agent.plan_rejected", JSON.stringify(diagnostic)),
+        });
         if (streaming) { emit({ type: "reply", reply }); res.end(); }
         else res.json(reply);
       } catch (e) {

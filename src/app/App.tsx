@@ -24,6 +24,7 @@ import { useEditorSessions } from "../sessions/useEditorSessions";
 import { SessionControls } from "../sessions/SessionControls";
 import type { ChatBridge } from "../sessions/model";
 import { shouldShowWelcome, WelcomeScreen } from "../components/WelcomeScreen";
+import { EquationInput } from "../components/EquationInput";
 export default function App() {
   const [welcomeOpen, setWelcomeOpen] = useState(shouldShowWelcome);
   const welcomeWasOpen = useRef(welcomeOpen);
@@ -58,13 +59,14 @@ export default function App() {
   const clarificationRef = useRef(false);
   const [hint, setHint] = useState("Di chuyển · kéo đối tượng để khám phá");
   const { grid, axes, snap, zoom, fit } = useViewport(controller);
-  const [dialog, setDialog] = useState<"documents" | "export" | null>(null);
+  const [dialog, setDialog] = useState<"documents" | "export" | "share" | null>(null);
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<{
     id: string;
     reply: AIReply;
     data: string;
     baseline: string;
+    historyXML?: string;
     objects?: GeometryObject[];
   } | null>(null);
   const previewCompletion = useRef<{
@@ -141,18 +143,21 @@ export default function App() {
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (sessions.busy || welcomeOpen) return;
-      if (
+      const modalEscape = e.key === "Escape" && e.target instanceof Element && !!e.target.closest('[role="dialog"]');
+      if (!modalEscape && (
         e.target instanceof HTMLInputElement ||
         e.target instanceof HTMLTextAreaElement ||
         e.target instanceof HTMLSelectElement ||
         (e.target instanceof Element &&
           !!e.target.closest("[contenteditable=true]"))
-      )
+      ))
         return;
-      if ((e.metaKey || e.ctrlKey) && e.key === "z") {
+      if (e.target instanceof Element && e.target.closest('[role="dialog"]') && (!dialog || e.key !== "Escape")) return;
+      if (((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") || (e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "y")) {
         e.preventDefault();
+        e.stopImmediatePropagation();
         if (!preview) {
-          if (e.shiftKey) controller?.redo();
+          if (e.shiftKey || e.key.toLowerCase() === "y") controller?.redo();
           else controller?.undo();
         }
       }
@@ -161,9 +166,13 @@ export default function App() {
         if (!preview) setDialog("documents");
       }
       if (e.key === "Escape") {
+        e.preventDefault();
+        if (e.target instanceof Element && e.target.closest(".main-engine")) e.stopPropagation();
         setDialog(null);
         setPreview(null);
-        controller?.select(null);
+        if (controller && !controller.loading) controller.setMode(0);
+        setMode(0);
+        setHint("Di chuyển · kéo điểm điều khiển để chỉnh hình");
       }
       if (
         (e.key === "Delete" || e.key === "Backspace") &&
@@ -172,12 +181,13 @@ export default function App() {
       ) {
         if (!dialog && !authView && !accountDocuments) {
           e.preventDefault();
+          e.stopImmediatePropagation();
           requestDelete();
         }
       }
     };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    window.addEventListener("keydown", key, true);
+    return () => window.removeEventListener("keydown", key, true);
   }, [controller, preview, dialog, authView, accountDocuments, sessions.busy, welcomeOpen]);
   function ready(adapter: GeoGebraAdapter) {
     controllerRef.current?.dispose();
@@ -205,12 +215,14 @@ export default function App() {
   async function beginPreview(reply: AIReply) {
     if (!controller) return;
     setError("");
+    const historyAction = reply.actions.find((action) => action.type === "history");
+    const historyXML = historyAction?.type === "history" ? controller.historyTarget(historyAction.direction) : undefined;
     const baseline = constructionKey(controller.adapter.snapshot());
     const data = await controller.adapter.base64();
     setPreviewReady(false);
     return new Promise<void>((resolve, reject) => {
       previewCompletion.current = { resolve, reject };
-      setPreview({ id: crypto.randomUUID(), reply, data, baseline });
+      setPreview({ id: crypto.randomUUID(), reply, data, baseline, historyXML });
     });
   }
   useEffect(() => {
@@ -233,7 +245,7 @@ export default function App() {
       if (constructionKey(controller.adapter.snapshot()) !== preview.baseline)
         throw new Error("Hình đã thay đổi. Hãy yêu cầu xem trước lại.");
       controller.apply(preview.reply.actions, preview.reply.checks);
-      if (preview.reply.actions.some((a) => a.type === "point" || a.type === "construct" || a.type === "altitude")) controller.adapter.resetView();
+      if (preview.reply.actions.some((a) => a.type === "point" || a.type === "construct" || a.type === "altitude" || (a.type === "view" && a.axes))) controller.adapter.resetView();
       controller.setMode(0);
       setMode(0);
       setHint("Di chuyển · kéo điểm điều khiển để chỉnh hình");
@@ -306,7 +318,7 @@ export default function App() {
         <button
           className="primary share-button"
           disabled={!controller || !!preview}
-          onClick={() => setDialog("export")}
+          onClick={() => setDialog("share")}
         >
           Chia sẻ
         </button>
@@ -363,9 +375,12 @@ export default function App() {
                 base64={preview.data}
                 onReady={(adapter) => {
                   try {
-                    executeActions(adapter, preview.reply.actions, preview.reply.checks);
-                    validateDynamicGeometry(adapter, preview.reply.checks);
-                    if (preview.reply.actions.some((a) => a.type === "point" || a.type === "construct" || a.type === "altitude")) adapter.resetView();
+                    if (preview.historyXML) adapter.restore(preview.historyXML);
+                    else {
+                      executeActions(adapter, preview.reply.actions, preview.reply.checks);
+                      validateDynamicGeometry(adapter, preview.reply.checks);
+                    }
+                    if (preview.reply.actions.some((a) => a.type === "point" || a.type === "construct" || a.type === "altitude" || (a.type === "view" && a.axes))) adapter.resetView();
                     for (const o of adapter.objects())
                       if (
                         !controller?.adapter.api.exists(o.name) &&
@@ -404,10 +419,10 @@ export default function App() {
               className={axes ? "active" : ""}
               disabled={!controller || !!preview}
               onClick={() => {
-                controller?.adapter.api.setAxesVisible(!axes, !axes);
-                controller?.sync();
+                controller?.setCoordinateAxes(!axes);
               }}
             />
+            <button type="button" aria-label="Ẩn / hiện số đo" aria-pressed={controller?.measurementsVisible ?? false} className={controller?.measurementsVisible ? "active" : ""} disabled={!controller || !!preview || !controller.canMeasure} onClick={() => controller?.setMeasurementsVisible(!controller.measurementsVisible)}>Số đo</button>
             <IconButton
               icon="reset"
               label="Đặt lại góc nhìn"
@@ -430,6 +445,7 @@ export default function App() {
             onProperties={() => setRight("properties")}
             onError={report}
           />
+          <EquationInput controller={controller} disabled={sessionsDisabled} onSubmitted={() => { setMode(0); setHint("Di chuyển · kéo điểm điều khiển để chỉnh hình"); }} />
           <div className="canvas-bottom">
             {!explorer && (
               <button onClick={() => setExplorer(true)}>
@@ -448,7 +464,7 @@ export default function App() {
                 aria-label="Thu nhỏ"
                 disabled={!controller || !!preview}
                 onClick={() => {
-                  controller?.adapter.command("ZoomIn(0.8)");
+                  controller?.adapter.zoom(0.8);
                   controller?.sync();
                 }}
               >
@@ -459,7 +475,7 @@ export default function App() {
                 aria-label="Phóng to"
                 disabled={!controller || !!preview}
                 onClick={() => {
-                  controller?.adapter.command("ZoomIn(1.25)");
+                  controller?.adapter.zoom(1.25);
                   controller?.sync();
                 }}
               >

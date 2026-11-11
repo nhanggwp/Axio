@@ -23,7 +23,7 @@ test("live agent resolves a visible endpoint label to the existing native segmen
   expect(plan.actions).toContainEqual({ type: "style", target: segment.name, color: "#4F18E9" });
   await page.getByRole("button", { name: "Áp dụng", exact: true }).click();
   expect(await page.evaluate(() => window.axio!.objects.length)).toBe(before.length);
-  expect(await page.evaluate((name) => ({ caption: window.axio!.adapter.api.getCaption(name, true), color: window.axio!.adapter.api.getColor(name) }), segment.name)).toEqual({ caption: "AC = 5", color: "#4F18E9" });
+  expect(await page.evaluate((name) => ({ caption: window.axio!.adapter.api.getCaption(name, true), color: window.axio!.adapter.api.getColor(name) }), segment.name)).toEqual({ caption: "AC", color: "#4F18E9" });
   await writeFile("docs/segment-labels-live-response.json", JSON.stringify({ plan }, null, 2));
   await page.screenshot({ path: "docs/segment-labels-live.png" });
 });

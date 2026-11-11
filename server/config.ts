@@ -19,6 +19,7 @@ export interface ServerConfig {
   deepseekKey?: string;
   deepseekModel: string;
   deepseekReasoningEffort?: "none" | "low" | "high" | "max";
+  aiDailyLimitEnabled?: boolean;
   guestDailyLimit: number;
   userDailyLimit: number;
   aiRequestLimit?: number;
@@ -68,6 +69,7 @@ export function loadConfig(): ServerConfig {
     deepseekKey: process.env.DEEPSEEK_API_KEY,
     deepseekModel: process.env.DEEPSEEK_MODEL || "deepseek-flash",
     deepseekReasoningEffort: effort as ServerConfig["deepseekReasoningEffort"],
+    aiDailyLimitEnabled: process.env.AI_DAILY_LIMIT_ENABLED === "true",
     guestDailyLimit: Number(process.env.AI_GUEST_DAILY_LIMIT) || 20,
     userDailyLimit: Number(process.env.AI_USER_DAILY_LIMIT) || 100,
     aiRequestLimit: Number(process.env.AI_REQUESTS_PER_MINUTE) || 12,

@@ -1,6 +1,9 @@
 import { z } from "zod";
 export const AGENT_TIMEOUT_MS = 120_000;
 export const labelSchema = z.string().max(24).regex(/^[A-Za-z][A-Za-z0-9_]*'{0,3}$/);
+// Existing native names (e.g. α, Văn bảnAB) are passed only to object APIs.
+// Keep newly created labels/command references on the stricter command-safe grammar.
+export const objectTargetSchema = z.string().min(1).max(64).regex(/^[\p{L}][\p{L}\p{M}\p{N}_ '′″]*$/u);
 export const geometryCheckSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("on_segment"), refs: z.tuple([labelSchema, labelSchema, labelSchema]) }).strict(),
   z.object({ kind: z.literal("equal_distance"), refs: z.tuple([labelSchema, labelSchema, labelSchema, labelSchema]) }).strict(),
@@ -72,19 +75,22 @@ export const actionSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("style"),
-      target: labelSchema,
+      target: objectTargetSchema,
       color: z
         .string()
         .regex(/^#[0-9a-fA-F]{6}$/)
         .optional(),
+      label: z.enum(["name","value","name_value","hidden"]).optional(),
       visible: z.boolean().optional(),
       thickness: z.number().int().min(1).max(13).optional(),
     })
     .strict(),
   z
-    .object({ type: z.literal("move"), target: labelSchema, x: n, y: n })
+    .object({ type: z.literal("move"), target: objectTargetSchema, x: n, y: n })
     .strict(),
-  z.object({ type: z.literal("delete"), target: labelSchema }).strict(),
+  z.object({ type: z.literal("delete"), target: objectTargetSchema }).strict(),
+  z.object({type:z.literal("view"),axes:z.boolean(),grid:z.boolean().optional()}).strict(),
+  z.object({ type: z.literal("history"), direction: z.enum(["undo", "redo"]) }).strict(),
 ]);
 export const selectionRequestSchema = z
   .object({
@@ -133,6 +139,10 @@ export const replySchema = z
         ? v.actions.length > 0 && v.missing_parameters.length === 0
         : v.actions.length === 0,
     "Chỉ kế hoạch đủ thông tin mới được chứa thao tác dựng hình.",
+  )
+  .refine(
+    (v) => !v.actions.some((action) => action.type === "history") || (v.actions.length === 1 && v.checks.length === 0),
+    "Hoàn tác/làm lại phải đứng riêng, không ghép với thao tác dựng hình hoặc checks.",
   );
 export type GeometryAction = z.infer<typeof actionSchema>;
 export type AIReply = z.infer<typeof replySchema>;
@@ -182,6 +192,8 @@ export const requestSchema = z
     validation_feedback: z.object({ message: z.string().min(1).max(4000), previous: replySchema }).strict().optional(),
     objects: z.array(objectSchema).max(400),
     preview_objects: z.array(objectSchema).max(400).optional(),
+    view: z.object({axes:z.boolean(),grid:z.boolean()}).strict().optional(),
+    history: z.object({ canUndo: z.boolean(), canRedo: z.boolean() }).strict().optional(),
     conversation: z
       .array(conversationEntrySchema)
       .max(12),

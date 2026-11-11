@@ -15,7 +15,7 @@ export function Toolbar({
 }) {
   const [open, setOpen] = useState<number | null>(null);
   return (
-    <nav className="toolbar" aria-label="Công cụ hình học">
+    <nav className="toolbar" aria-label="Công cụ hình học" onKeyDown={event => { if (event.key === "Escape") { setOpen(null); event.stopPropagation(); } }}>
       {toolGroups.map((g, i) => (
         <div className={`tool-group group-${i}`} key={g.title}>
           <IconButton

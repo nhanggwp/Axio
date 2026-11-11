@@ -24,6 +24,11 @@ export class ConstructionHistory {
   get canRedo() {
     return this.index < this.states.length - 1;
   }
+  peek(direction: "undo" | "redo") {
+    return direction === "undo"
+      ? (this.canUndo ? this.states[this.index - 1] : undefined)
+      : (this.canRedo ? this.states[this.index + 1] : undefined);
+  }
   undo() {
     return this.canUndo ? this.states[--this.index] : undefined;
   }

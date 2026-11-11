@@ -1,7 +1,10 @@
+import { applyObjectLabel } from "./segmentLabels";
+import { nativeNumber } from "./nativeNumber";
 import { supportsStroke } from "./GeometryState";
 import { actionSchema, labelSchema, type GeometryAction, type GeometryCheck } from "../../shared/actions";
 import { validateGeometry } from "./GeometryChecks";
 import { GeoGebraAdapter } from "./GeoGebraAdapter";
+import { bindCircumcircleVertices, circumcircleBoundary, projectOnCircle } from "./CircleBoundary";
 import { isPolygonType, POLYGON_TYPES, polygonVertices, triangleVertices } from "./triangleVertices";
 const triangleCenters: Record<string, number> = { incenter: 1, centroid: 2, circumcenter: 3, orthocenter: 4 };
 const polygonCounts = Array.from({ length: 98 }, (_, i) => i + 3);
@@ -285,10 +288,16 @@ export function executeActions(
   try {
     for (const input of actions) {
       const a = actionSchema.parse(input);
+      if (a.type === "history")
+        throw new Error("Thao tác lịch sử phải được thực hiện qua bộ điều khiển tài liệu.");
       const prior = new Set(api.getAllObjectNames());
+      if (a.type === "view") {
+        adapter.setCoordinateAxes(a.axes);
+        if (a.grid !== undefined) api.setGridVisible(a.grid);
+      }
       if (a.type === "point") {
         unique(a.label);
-        adapter.command(`${a.label}=(${a.x},${a.y})`);
+        adapter.command(`${a.label}=(${nativeNumber(a.x)},${nativeNumber(a.y)})`);
       }
       if (a.type === "construct") {
         unique(a.label);
@@ -380,10 +389,10 @@ export function executeActions(
             a.kind === "rotate" || a.kind === "dilate"
               ? [
                   refs[0],
-                  String(scaleValue) + (a.kind === "rotate" ? "°" : ""),
+                  nativeNumber(scaleValue) + (a.kind === "rotate" ? "°" : ""),
                   refs[1],
                 ]
-              : [...refs, String(scaleValue)];
+              : [...refs, nativeNumber(scaleValue)];
         }
         if (a.kind === "angle" && refs.length === 3) {
           const [p, v, q] = refs.map((name) => [api.getXcoord(name), api.getYcoord(name)]);
@@ -429,7 +438,7 @@ export function executeActions(
         if (a.kind === "length" && !a.auxiliary && api.getObjectType(a.refs[0]) === "segment") {
           roles.set(a.refs[0], false);
           visibility.set(a.refs[0], true);
-          api.setLabelVisible(a.refs[0], true);
+          applyObjectLabel(api, a.refs[0], "name_value");
         }
       }
       if (a.type === "altitude") {
@@ -453,6 +462,7 @@ export function executeActions(
       if (a.type === "style") {
         need(a.target);
         if (a.color) adapter.color(a.target, a.color);
+        if (a.label) applyObjectLabel(api, a.target, a.label);
         if (a.visible !== undefined) api.setVisible(a.target, a.visible);
         if (a.thickness) {
           if (!supportsStroke(api.getObjectType(a.target)))
@@ -466,7 +476,15 @@ export function executeActions(
         need(a.target, ["point"]);
         if (!api.isMoveable(a.target))
           throw new Error("Điểm này phụ thuộc phép dựng hoặc đã khóa. Hãy chỉnh điểm điều khiển của nó.");
-        api.setCoords(a.target, a.x, a.y);
+        const boundary = circumcircleBoundary(api, a.target);
+        if (boundary) {
+          if (!boundary.vertices.every(name => api.isIndependent(name)))
+            throw new Error("Đỉnh thuộc hình có ràng buộc. Kéo đỉnh để xoay hình quanh tâm và giữ nguyên đường tròn.");
+          const position = projectOnCircle(boundary, a.x, a.y);
+          if (!position) throw new Error("Cần chọn hướng khác tâm đường tròn để trượt đỉnh.");
+          bindCircumcircleVertices(api, boundary);
+          api.setCoords(a.target, position.x, position.y);
+        } else api.setCoords(a.target, a.x, a.y);
       }
       if (a.type === "delete") {
         need(a.target);
@@ -480,13 +498,15 @@ export function executeActions(
         if (!prior.has(name)) {
           if ((a.type === "point" || a.type === "construct") && a.auxiliary !== undefined && !roles.has(name)) roles.set(name, a.auxiliary);
           const type = api.getObjectType(name);
-          api.setLabelVisible(name, type === "point" || type === "segment");
+          if (type === "segment") applyObjectLabel(api, name, "name");
+          if (type === "angle") api.setLabelStyle(name,0);
+          api.setLabelVisible(name, type === "point");
           api.setLineThickness(name, 2);
           if (isPolygonType(type)) {
             adapter.color(name, "#C9E1E6");
             api.setFilling(name, 0.18);
           } else if (a.type !== "altitude") adapter.color(name, "#23232D");
-          if (type === "point") api.setPointSize(name, 3);
+          if (type === "point") api.setPointSize(name, 4);
         }
       }
       if (a.type === "style" && a.visible !== undefined) visibility.set(a.target, a.visible);
@@ -497,6 +517,7 @@ export function executeActions(
       if (auxiliary && visibility.get(name) !== true) api.setVisible(name, false);
     }
     adapter.formatSegmentLabels();
+    adapter.formatPointLabels();
     adapter.hideDuplicateBoundaryLabels(api.getAllObjectNames().filter((name) => !initialNames.has(name)));
     validateGeometry(adapter, checks);
   } catch (error) {
