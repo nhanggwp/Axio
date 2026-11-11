@@ -1,3 +1,4 @@
+import { contentBounds, svgCanvas, whiteSVG } from "./exportImage";
 import { configureCoordinateAxes, formatPointCoordinates } from "./coordinateDisplay";
 import type { GGBApi } from "../types/geogebra";
 import type { GeometryObject } from "../../shared/actions";
@@ -210,25 +211,44 @@ export class GeoGebraAdapter {
     const optionsBefore = typeof rawOptions === "string" ? JSON.parse(rawOptions) : rawOptions;
     const paint = () => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
     try {
-      if (options.grid !== undefined) this.api.setGridVisible(options.grid);
+      this.api.setGridVisible(options.grid ?? false);
+      this.api.setGraphicsOptions(1, { bgColor: "#FFFFFF" });
       if (options.axes !== undefined) this.api.setAxesVisible(options.axes, options.axes);
       if (options.center !== false) this.resetView();
       await paint();
       return await render();
     } finally {
       this.api.setGridVisible(before.grid);
+      this.api.setGraphicsOptions(1, { bgColor: optionsBefore.bgColor ?? "#FFFFFF" });
       this.api.setAxesVisible(optionsBefore.axes.x.visible, optionsBefore.axes.y.visible);
       this.api.setCoordSystem(view.xMin, view.xMin + view.width * view.invXscale, view.yMin, view.yMin + view.height * view.invYscale);
       await paint();
     }
   }
-  exportPNG(options: { center?: boolean; grid?: boolean; axes?: boolean } = {}) {
-    return this.renderExport(options, () => this.api.getPNGBase64(2, false));
-  }
-  exportSVG(options: { center?: boolean; grid?: boolean; axes?: boolean } = {}) {
-    return this.renderExport(options, () => new Promise<string>((resolve, reject) => {
+  private nativeSVG() {
+    return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error("Xuất SVG quá lâu. Hãy thử lại.")), 10000);
       this.api.exportSVG(svg => { clearTimeout(timer); if (svg) resolve(svg); else reject(new Error("Không thể xuất SVG cho góc nhìn này.")); });
-    }));
+    });
+  }
+  private async focusedSVG(options: { center?: boolean; grid?: boolean }) {
+    // Measure geometry without the grid, which otherwise fills the entire image.
+    this.api.setGridVisible(false);
+    const geometry = await this.nativeSVG();
+    const bounds = options.center !== false ? await contentBounds(geometry) : undefined;
+    if (options.grid) {
+      this.api.setGridVisible(true);
+      return whiteSVG(await this.nativeSVG(), bounds);
+    }
+    return whiteSVG(geometry, bounds);
+  }
+  exportPNG(options: { center?: boolean; grid?: boolean; axes?: boolean } = {}) {
+    return this.renderExport(options, async () => {
+      const canvas = await svgCanvas(await this.focusedSVG(options), 2);
+      return canvas.toDataURL("image/png").split(",")[1];
+    });
+  }
+  exportSVG(options: { center?: boolean; grid?: boolean; axes?: boolean } = {}) {
+    return this.renderExport(options, () => this.focusedSVG(options));
   }
 }

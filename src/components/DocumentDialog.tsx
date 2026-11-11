@@ -48,7 +48,7 @@ export function DocumentDialog({
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [center, setCenter] = useState(true);
-  const [grid, setGrid] = useState(() => controller.adapter.viewState().grid);
+  const [grid, setGrid] = useState(false);
   const [axes, setAxes] = useState(() => controller.adapter.viewState().axes);
   const exportOptions = { center, grid, axes };
   const run = async (fn: () => void | Promise<void>) => {
@@ -246,6 +246,9 @@ export function DocumentDialog({
                 Trục tọa độ trong ảnh
               </label>
             </div>
+            <small>
+              Ảnh được cắt sát hình, chừa viền cho nhãn. Bỏ căn giữa để xuất toàn bộ góc nhìn hiện tại.
+            </small>
             {kind === "share" && (
               <>
                 <p>
