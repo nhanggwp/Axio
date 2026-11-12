@@ -85,6 +85,7 @@ export class GeometryController {
     hasRigidConstraint: boolean;
   } | null = null;
   constructor(readonly adapter: GeoGebraAdapter) {
+    adapter.ensureBisectorMarks();
     adapter.formatSegmentLabels();
     adapter.formatPointLabels();
     adapter.hideDuplicateBoundaryLabels();
@@ -127,6 +128,7 @@ export class GeometryController {
   }
   sync = () => {
     if (this.disposed) return;
+    this.adapter.ensureBisectorMarks();
     this.adapter.formatSegmentLabels();
     this.adapter.formatPointLabels();
     this.objects = this.adapter.objects();
@@ -149,7 +151,7 @@ export class GeometryController {
     }, 350);
   };
   private added = (name: string) => {
-    if (this.paused || this.disposed) return;
+    if (this.paused || this.disposed || this.adapter.isMarkingBisectors) return;
     const a = this.adapter.api,
       type = a.getObjectType(name),
       polygon = isPolygonType(type);
@@ -1046,6 +1048,7 @@ export class GeometryController {
     this.paused = true;
     try {
       fn();
+      this.adapter.ensureBisectorMarks();
       this.adapter.formatSegmentLabels();
       this.adapter.formatPointLabels();
       this.history.push(this.adapter.snapshot());
@@ -1174,6 +1177,7 @@ export class GeometryController {
       });
       this.adapter.api.setPerspective("G");
       this.adapter.api.setRounding("2");
+      this.adapter.ensureBisectorMarks();
       this.adapter.formatSegmentLabels();
       this.adapter.formatPointLabels();
       this.adapter.hideDuplicateBoundaryLabels();

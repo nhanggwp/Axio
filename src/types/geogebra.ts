@@ -52,6 +52,7 @@ export interface GGBApi {
     cb: (oldName: string, newName: string) => void,
   ): void;
   setXML(xml: string): void;
+  evalXML(xml: string): void;
   getBase64(callback: (data: string) => void): void;
   setBase64(data: string, callback?: () => void): void;
   getPNGBase64(scale: number, transparent: boolean, dpi?: number): string;

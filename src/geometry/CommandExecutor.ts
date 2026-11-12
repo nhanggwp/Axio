@@ -516,6 +516,7 @@ export function executeActions(
       api.setAuxiliary(name, auxiliary);
       if (auxiliary && visibility.get(name) !== true) api.setVisible(name, false);
     }
+    adapter.ensureBisectorMarks();
     adapter.formatSegmentLabels();
     adapter.formatPointLabels();
     adapter.hideDuplicateBoundaryLabels(api.getAllObjectNames().filter((name) => !initialNames.has(name)));

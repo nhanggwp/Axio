@@ -1,3 +1,4 @@
+import { ensureBisectorMarks } from "./bisectorMarks";
 import { contentBounds, svgCanvas, whiteSVG } from "./exportImage";
 import { configureCoordinateAxes, formatPointCoordinates } from "./coordinateDisplay";
 import type { GGBApi } from "../types/geogebra";
@@ -32,6 +33,13 @@ export function loadGeoGebra() {
 }
 export class GeoGebraAdapter {
   constructor(public readonly api: GGBApi) {}
+  private markingBisectors = false;
+  get isMarkingBisectors() { return this.markingBisectors; }
+  ensureBisectorMarks() {
+    if (this.markingBisectors) return;
+    this.markingBisectors = true;
+    try { ensureBisectorMarks(this.api); } finally { this.markingBisectors = false; }
+  }
   command(command: string) {
     if (!this.api.evalCommand(command))
       throw new Error("Không thể dựng hình: " + command);
