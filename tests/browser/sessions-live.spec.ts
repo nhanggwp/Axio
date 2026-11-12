@@ -24,11 +24,13 @@ test("live independent editor sessions retain their own construction and convers
   await ask("Vẽ đường tròn tâm O(1, 1), bán kính 2.");
   expect(await page.evaluate(() => window.axio!.objects.filter((o) => o.type === "circle").length)).toBe(1);
   expect(await page.evaluate(() => window.axio!.objects.some((o) => o.type === "triangle"))).toBe(false);
+  await page.getByRole("button", { name: "Chọn phiên làm việc", exact: true }).click();
   await page.getByRole("tab", { name: "Phiên 1", exact: true }).click();
   await expect(page.locator(".session-loading")).toBeHidden();
   expect(await page.evaluate(() => window.axio!.objects.filter((o) => o.type === "triangle").length)).toBe(1);
   await expect(page.locator(".conversation")).toContainText("Vẽ một tam giác bất kỳ cho mình.");
   await expect(page.locator(".conversation")).not.toContainText("Vẽ đường tròn tâm O");
+  await page.getByRole("button", { name: "Chọn phiên làm việc", exact: true }).click();
   await page.getByRole("tab", { name: "Phiên 2", exact: true }).click();
   await expect(page.locator(".session-loading")).toBeHidden();
   await expect(page.locator(".conversation")).toContainText("Vẽ đường tròn tâm O(1, 1), bán kính 2.");
@@ -40,6 +42,7 @@ test("live independent editor sessions retain their own construction and convers
   await page.screenshot({ path: "docs/sessions-live-desktop.png" });
   await page.setViewportSize({ width: 375, height: 812 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(375);
+  await page.getByRole("button", { name: "Chọn phiên làm việc", exact: true }).click();
   await page.getByRole("button", { name: "Quản lý phiên", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "Quản lý phiên", exact: true })).toBeVisible();
   await page.screenshot({ path: "docs/sessions-mobile.png" });

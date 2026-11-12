@@ -19,7 +19,33 @@ const icons: Record<string, string> = {
   redo: "imgKhung16",
   undo: "imgKhung17",
 };
+const symbols: Record<string, string> = {
+  more: "M5 12h.01M12 12h.01M19 12h.01",
+  chevron: "m7 10 5 5 5-5",
+  plus: "M12 5v14M5 12h14",
+  sessions:
+    "M8 3H4a1 1 0 0 0-1 1v12M8 7h12a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z",
+  chat: "M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-6 3V6a2 2 0 0 1 2-2ZM7 9h10M7 13h6",
+  info: "M12 11v6M12 7h.01M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z",
+  check: "m5 12 4 4L19 6",
+  search: "m16 16 5 5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z",
+};
 export function Icon({ name }: { name: string }) {
+  if (symbols[name])
+    return (
+      <svg
+        className="icon"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={name === "more" ? 3.5 : 1.65}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d={symbols[name]} />
+      </svg>
+    );
   return (
     <img
       className="icon"

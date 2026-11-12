@@ -6,7 +6,7 @@ import path from "node:path";
 export const test = base.extend<{ showWelcome: boolean }>({
   showWelcome: [false, { option: true }],
   page: async ({ page, showWelcome }, use) => {
-    if (!showWelcome) await page.addInitScript(() => { try { localStorage.setItem("axio-welcome-seen-v1", "1"); } catch {} });
+    if (!showWelcome) await page.addInitScript(() => { try { localStorage.setItem("axio-welcome-seen-v1", "1"); sessionStorage.setItem("axio-welcome-visit-v2", "1"); } catch {} });
     const directory = path.resolve(".cache/geogebra");
     await mkdir(path.resolve("docs"), { recursive: true });
     await mkdir(directory, { recursive: true });

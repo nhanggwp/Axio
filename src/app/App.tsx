@@ -24,6 +24,7 @@ import { useEditorSessions } from "../sessions/useEditorSessions";
 import { SessionControls } from "../sessions/SessionControls";
 import type { ChatBridge } from "../sessions/model";
 import { shouldShowWelcome, WelcomeScreen } from "../components/WelcomeScreen";
+import { EditorMenu } from "../components/EditorMenu";
 import { EquationInput } from "../components/EquationInput";
 export default function App() {
   const [welcomeOpen, setWelcomeOpen] = useState(shouldShowWelcome);
@@ -44,6 +45,7 @@ export default function App() {
   } | null>(null);
   const canvasRef = useRef<HTMLElement | null>(null);
   useEffect(() => {
+    if (welcomeOpen) welcomeWasOpen.current = true;
     if (!welcomeOpen && welcomeWasOpen.current) {
       welcomeWasOpen.current = false;
       canvasRef.current?.focus({ preventScroll: true });
@@ -53,7 +55,23 @@ export default function App() {
   const [controller, setController] = useState<GeometryController>();
   const [, render] = useState(0);
   const [title, setTitle] = useState("Hình dựng mới");
-  const [right, setRight] = useState<"ai" | "properties" | null>("ai");
+  const [right, setRight] = useState<"ai" | "properties" | null>(() => window.innerWidth > 1024 ? "ai" : null);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    const resize = () =>
+      document.documentElement.style.setProperty(
+        "--app-height",
+        `${viewport?.height ?? window.innerHeight}px`,
+      );
+    resize();
+    viewport?.addEventListener("resize", resize);
+    window.addEventListener("resize", resize);
+    return () => {
+      viewport?.removeEventListener("resize", resize);
+      window.removeEventListener("resize", resize);
+      document.documentElement.style.removeProperty("--app-height");
+    };
+  }, []);
   const [explorer, setExplorer] = useState(() => window.innerWidth > 1100);
   const [mode, setMode] = useState(0);
   const clarificationRef = useRef(false);
@@ -82,7 +100,7 @@ export default function App() {
   );
   const chatBridge = useRef<ChatBridge | null>(null);
   const [agentBusy, setAgentBusy] = useState(false);
-  const sessions = useEditorSessions({ controller, title, setTitle, userId: session.data?.user.id, identityReady: !session.isPending, workspace, chat: chatBridge, blocked: agentBusy || !!preview, onActivated: () => setRight("ai") });
+  const sessions = useEditorSessions({ controller, title, setTitle, userId: session.data?.user.id, identityReady: !session.isPending, workspace, chat: chatBridge, blocked: agentBusy || !!preview, onActivated: () => setRight(window.innerWidth > 1024 ? "ai" : null) });
   const sessionsDisabled = !sessions.ready || sessions.busy || agentBusy || !!preview || !!controller?.loading;
   useEffect(() => {
     fetch("/api/status")
@@ -237,7 +255,10 @@ export default function App() {
   const select = (name: string, additive = false) => {
     if (additive) controller?.toggleSelection(name);
     else controller?.select(name);
-    if (!clarificationRef.current) setRight("properties");
+    if (!clarificationRef.current) {
+      setRight("properties");
+      if (window.innerWidth <= 600) setExplorer(false);
+    }
   };
   const apply = () => {
     if (!controller || !preview || !previewReady) return false;
@@ -260,16 +281,23 @@ export default function App() {
   return (
     <><main className="application" inert={welcomeOpen}>
       <header className="topbar">
-        <div className="brand">
+        <button
+          className="brand"
+          aria-label="Mở lời chào Axio"
+          title="Chào mừng tới Axio"
+          onClick={() => setWelcomeOpen(true)}
+        >
           <Icon name="polygon" />
-          <strong>Hình học</strong>
-        </div>
+          <strong>Axio</strong>
+        </button>
+        <SessionControls manager={sessions} disabled={sessionsDisabled} />
         <button
           className="document-title"
+          title={title}
           onClick={() => setDialog("documents")}
           disabled={!controller || !!preview}
         >
-          {title}
+          Lưu & mở
         </button>
         <IconButton
           icon="undo"
@@ -301,13 +329,6 @@ export default function App() {
             ? "Đang tải…"
             : session.data?.user.name || "Đăng nhập"}
         </button>
-        <small className="save-status">
-          {workspace.active
-            ? workspace.status
-            : controller?.dirty
-              ? "Có thay đổi chưa lưu"
-              : "Chưa lưu"}
-        </small>
         <button
           className="export-button"
           disabled={!controller || !!preview}
@@ -322,14 +343,30 @@ export default function App() {
         >
           Chia sẻ
         </button>
-        <IconButton
-          icon="panel"
-          label="Ẩn / hiện trợ lý AI"
-          className={right === "ai" ? "active" : ""}
-          onClick={() => setRight(right === "ai" ? null : "ai")}
+        <EditorMenu
+          disabled={!controller || !!preview}
+          accountPending={session.isPending}
+          accountLabel={session.data?.user.name || "Đăng nhập"}
+          onDocuments={() => setDialog("documents")}
+          onAccount={() => setAuthView(session.data ? "profile" : "login")}
+          onSavedDocuments={() => setAccountDocuments(true)}
+          onExport={() => setDialog("export")}
+          onShare={() => setDialog("share")}
+          onWelcome={() => setWelcomeOpen(true)}
+          canRedo={!!controller?.history.canRedo && !preview}
+          onRedo={() => controller?.redo()}
         />
+        <button
+          aria-label="Ẩn / hiện trợ lý AI"
+          title="Trợ lý hình học"
+          className={`assistant-toggle${right === "ai" ? " active" : ""}`}
+          aria-expanded={right === "ai"}
+          onClick={() => { if (window.innerWidth <= 850) setExplorer(false); setRight(right === "ai" ? null : "ai"); }}
+        >
+          <Icon name="chat" />
+          <span>Trợ lý</span>
+        </button>
       </header>
-      <SessionControls manager={sessions} disabled={sessionsDisabled} />
       <div className="editor">
         <Toolbar
           disabled={!controller || !!preview}
@@ -448,7 +485,7 @@ export default function App() {
           <EquationInput controller={controller} disabled={sessionsDisabled} onSubmitted={() => { setMode(0); setHint("Di chuyển · kéo điểm điều khiển để chỉnh hình"); }} />
           <div className="canvas-bottom">
             {!explorer && (
-              <button onClick={() => setExplorer(true)}>
+              <button onClick={() => { if (window.innerWidth <= 850) setRight(null); setExplorer(true); }}>
                 Đối tượng · {controller?.objects.length || 0}
               </button>
             )}
@@ -487,6 +524,7 @@ export default function App() {
         {
           <div className={right === "ai" ? "ai-slot" : "panel-hidden"}>
             <AIAssistant
+              visible={right === "ai"}
               key={sessions.chatKey ?? "initial"}
               chatRef={chatBridge}
               initialChat={sessions.initialChat}

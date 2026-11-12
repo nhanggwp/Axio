@@ -1,11 +1,19 @@
-import { useEffect, useImperativeHandle, useRef, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import type { AIReply, GeometryObject } from "../../shared/actions";
 import type { GeometryController } from "../geometry/GeometryController";
 import { useAgentConversation } from "../services/ai/useAgentConversation";
-import { IconButton } from "./Icon";
+import { Icon, IconButton } from "./Icon";
 import type { ChatBridge, ChatDraft } from "../sessions/model";
 export function AIAssistant({
   controller,
+  visible,
   onClose,
   onPreview,
   preview,
@@ -21,6 +29,7 @@ export function AIAssistant({
   suspended,
 }: {
   controller?: GeometryController;
+  visible: boolean;
   onClose: () => void;
   onPreview: (reply: AIReply) => Promise<void>;
   preview: AIReply | null;
@@ -51,9 +60,31 @@ export function AIAssistant({
     conversationRef = useRef<HTMLDivElement>(null),
     followBottom = useRef(true);
   const [request, setRequest] = useState(agent.initialComposer);
-  useImperativeHandle(chatRef, () => ({ busy: agent.busy, capture: () => ({ messages: agent.messages, pending: agent.pending, composer: request }) }), [agent.busy, agent.messages, agent.pending, request]);
-  useEffect(() => { onDraftChange(); }, [agent.messages, agent.pending, request, onDraftChange]);
-  useEffect(() => { onBusyChange(agent.busy); }, [agent.busy, onBusyChange]);
+  const input = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    if (input.current) {
+      input.current.style.height = "auto";
+      input.current.style.height = `${Math.min(144, Math.max(52, input.current.scrollHeight))}px`;
+    }
+  }, [request, visible]);
+  useImperativeHandle(
+    chatRef,
+    () => ({
+      busy: agent.busy,
+      capture: () => ({
+        messages: agent.messages,
+        pending: agent.pending,
+        composer: request,
+      }),
+    }),
+    [agent.busy, agent.messages, agent.pending, request],
+  );
+  useEffect(() => {
+    onDraftChange();
+  }, [agent.messages, agent.pending, request, onDraftChange]);
+  useEffect(() => {
+    onBusyChange(agent.busy);
+  }, [agent.busy, onBusyChange]);
   useEffect(() => {
     const el = conversationRef.current;
     if (el && followBottom.current) el.scrollTop = el.scrollHeight;
@@ -73,10 +104,15 @@ export function AIAssistant({
     return fetch("/api/status")
       .then((r) => r.json())
       .then((j) => {
-        const accepted = !Array.isArray(j.allowedOrigins) || j.allowedOrigins.includes(location.origin);
+        const accepted =
+          !Array.isArray(j.allowedOrigins) ||
+          j.allowedOrigins.includes(location.origin);
         setConfigured(!!j.configured && accepted);
         setDailyLimitEnabled(j.dailyLimitEnabled !== false);
-        if (!accepted) agent.setError(`Địa chỉ truy cập chưa khớp với máy chủ. Hãy mở Axio tại ${j.allowedOrigins[0]}.`);
+        if (!accepted)
+          agent.setError(
+            `Địa chỉ truy cập chưa khớp với máy chủ. Hãy mở Axio tại ${j.allowedOrigins[0]}.`,
+          );
       })
       .catch(() => {
         setConfigured(false);
@@ -99,25 +135,61 @@ export function AIAssistant({
     .reverse()
     .find((m) => m.role === "assistant" && m.status === "needs_clarification");
   const selectable = agent.pending?.selection_request;
-  const latestReply = [...agent.messages].reverse().find((m) => m.role === "assistant" && m.source === "deepseek");
+  const latestReply = [...agent.messages]
+    .reverse()
+    .find((m) => m.role === "assistant" && m.source === "deepseek");
   const canSelect =
     selectable &&
-    (controller?.objects.filter((o) => selectable.allowed_types.includes(o.type))
-      .length ?? 0) >= selectable.min;
+    (controller?.objects.filter((o) =>
+      selectable.allowed_types.includes(o.type),
+    ).length ?? 0) >= selectable.min;
   return (
     <aside className="assistant">
       <header>
-        <strong>Trợ lý hình học</strong>
+        <div className="assistant-heading">
+          <strong>Trợ lý hình học</strong>
+          <small className={configured === false ? "unavailable" : ""}>
+            {configured === null
+              ? "Đang kết nối…"
+              : configured
+                ? "Sẵn sàng"
+                : "Chưa kết nối"}
+          </small>
+        </div>
+        <details className="assistant-info">
+          <summary aria-label="Thông tin trợ lý" title="Thông tin trợ lý">
+            <Icon name="info" />
+          </summary>
+          <div>
+            <strong>Trợ lý DeepSeek</strong>
+            <p>{configured ? "Đã kết nối" : "Đang kiểm tra kết nối"}</p>
+            {configured && (
+              <p>
+                {dailyLimitEnabled
+                  ? "Hạn mức hằng ngày đang bật."
+                  : "Đang thử nghiệm, không giới hạn lượt mỗi ngày."}
+              </p>
+            )}
+            <p>Thay đổi hình có bản xem trước để bạn kiểm tra.</p>
+          </div>
+        </details>
         <IconButton
           icon="close"
           label="Đóng bảng trợ lý AI"
           onClick={onClose}
         />
       </header>
-      <div className="conversation" ref={conversationRef} aria-live="polite" onScroll={() => {
-        const el = conversationRef.current;
-        if (el) followBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 48;
-      }}>
+      <div
+        className="conversation"
+        ref={conversationRef}
+        aria-live="polite"
+        onScroll={() => {
+          const el = conversationRef.current;
+          if (el)
+            followBottom.current =
+              el.scrollHeight - el.scrollTop - el.clientHeight < 48;
+        }}
+      >
         <p className="eyebrow">HÌNH ĐANG DỰNG</p>
         {agent.messages.length === 0 && (
           <>
@@ -134,10 +206,7 @@ export function AIAssistant({
                     "Giải thích quan hệ giữa các đối tượng đang chọn.",
                     "Kiểm tra các quan hệ hình học trong hình hiện tại.",
                   ]
-                : [
-                    "Vẽ một tam giác bất kỳ.",
-                    "Vẽ đường tròn bán kính 5.",
-                  ]
+                : ["Vẽ một tam giác bất kỳ.", "Vẽ đường tròn bán kính 5."]
               ).map((s) => (
                 <button
                   key={s}
@@ -170,26 +239,58 @@ export function AIAssistant({
             <p>{m.content}</p>
             {m.outcome && (
               <small className={`message-outcome ${m.outcome}`}>
-                {{ proposed: "Đang kiểm tra đề xuất…", previewed: "Đã kiểm tra · chờ bạn áp dụng", applied: "Đã áp dụng thay đổi và kiểm tra hình dựng", cancelled: "Đã bỏ đề xuất này", execution_error: "Chưa áp dụng · phép dựng có lỗi" }[m.outcome]}
+                {
+                  {
+                    proposed: "Đang kiểm tra đề xuất…",
+                    previewed: "Đã kiểm tra · chờ bạn áp dụng",
+                    applied: "Đã áp dụng thay đổi và kiểm tra hình dựng",
+                    cancelled: "Đã bỏ đề xuất này",
+                    execution_error: "Chưa áp dụng · phép dựng có lỗi",
+                  }[m.outcome]
+                }
               </small>
             )}
-            {m.status === "interrupted" && <small className="message-outcome">Đã dừng phản hồi</small>}
+            {m.status === "interrupted" && (
+              <small className="message-outcome">Đã dừng phản hồi</small>
+            )}
           </div>
         ))}
         {agent.busy && agent.partial && (
-          <div className="message assistant-message streaming-message" aria-label="Phản hồi đang nhận">
-            <b>TRỢ LÝ</b><p>{agent.partial}</p>
+          <div
+            className="message assistant-message streaming-message"
+            aria-label="Phản hồi đang nhận"
+          >
+            <b>TRỢ LÝ</b>
+            <p>{agent.partial}</p>
           </div>
         )}
         {agent.busy && (
           <div className="processing">
             <span className="spinner" />
-            {agent.phase === "preview" ? "Đang dựng thử bằng GeoGebra…" : agent.phase === "repairing" ? "Đang điều chỉnh kế hoạch theo lỗi kiểm tra…" : agent.phase === "validating" ? "Đang kiểm tra kế hoạch…" : agent.partial ? "Đang nhận phản hồi…" : "Đang đọc hình và hội thoại…"}
+            {agent.phase === "preview"
+              ? "Đang dựng thử bằng GeoGebra…"
+              : agent.phase === "repairing"
+                ? "Đang điều chỉnh kế hoạch theo lỗi kiểm tra…"
+                : agent.phase === "validating"
+                  ? "Đang kiểm tra kế hoạch…"
+                  : agent.partial
+                    ? "Đang nhận phản hồi…"
+                    : "Đang đọc hình và hội thoại…"}
           </div>
         )}
         {!agent.busy && !!latestReply?.suggestions?.length && (
           <div className="suggestions" aria-label="Gợi ý tiếp nối">
-            {latestReply.suggestions.map((suggestion) => <button key={suggestion} onClick={() => { followBottom.current = true; void agent.submit(suggestion); }}>{suggestion}</button>)}
+            {latestReply.suggestions.map((suggestion) => (
+              <button
+                key={suggestion}
+                onClick={() => {
+                  followBottom.current = true;
+                  void agent.submit(suggestion);
+                }}
+              >
+                {suggestion}
+              </button>
+            ))}
           </div>
         )}
         {agent.pending && (
@@ -258,14 +359,6 @@ export function AIAssistant({
             Kiểm tra lại kết nối
           </button>
         )}
-        <div className="connection">
-          {configured === null
-            ? "Đang kiểm tra kết nối…"
-            : configured
-              ? "DeepSeek · Đã cấu hình"
-              : "DeepSeek · Chưa kết nối"}
-        </div>
-        {configured && !dailyLimitEnabled && <small className="quota-status">Thử nghiệm · Không giới hạn lượt/ngày</small>}
         <form
           className="composer"
           onSubmit={(e) => {
@@ -274,6 +367,9 @@ export function AIAssistant({
           }}
         >
           <textarea
+            ref={input}
+            rows={2}
+            enterKeyHint="send"
             aria-label="Yêu cầu hình học"
             placeholder={
               agent.pending
@@ -285,33 +381,55 @@ export function AIAssistant({
             disabled={!controller || suspended}
             maxLength={3000}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
                 e.preventDefault();
                 send();
               }
             }}
           />
           <div>
-            <small>
-              Tham chiếu:{" "}
-              {controller?.selectedNames.map((name) => controller.objects.find((o) => o.name === name)?.displayName ?? name).join(", ") || "hình hiện tại"}
+            <small
+              className="composer-context"
+              title="Trợ lý tham chiếu các đối tượng được chọn, hoặc toàn bộ hình hiện tại"
+            >
+              <Icon name="polygon" />{" "}
+              {controller?.selectedNames
+                .map(
+                  (name) =>
+                    controller.objects.find((o) => o.name === name)
+                      ?.displayName ?? name,
+                )
+                .join(", ") || "hình hiện tại"}
             </small>
-            {agent.busy ? <button className="stop-response" type="button" onClick={agent.stop}>Dừng phản hồi</button> : <IconButton
-              type="submit"
-              icon="send"
-              label="Gửi yêu cầu"
-              className="primary"
-              disabled={
-                !configured ||
-                !controller ||
-                agent.busy ||
-                suspended ||
-                !request.trim()
-              }
-            />}
+            {agent.busy ? (
+              <button
+                className="stop-response"
+                type="button"
+                onClick={agent.stop}
+              >
+                Dừng phản hồi
+              </button>
+            ) : (
+              <IconButton
+                type="submit"
+                icon="send"
+                label="Gửi yêu cầu"
+                className="primary"
+                disabled={
+                  !configured ||
+                  !controller ||
+                  agent.busy ||
+                  suspended ||
+                  !request.trim()
+                }
+              />
+            )}
           </div>
         </form>
-        <small>{preview ? "Bạn có thể hỏi thêm hoặc yêu cầu sửa bản xem trước." : "Hỏi tiếp theo hội thoại; thay đổi hình luôn có xem trước."}</small>
       </div>
     </aside>
   );

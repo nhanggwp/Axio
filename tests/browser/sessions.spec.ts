@@ -5,12 +5,13 @@ async function ready(page: Page) {
   await page.goto("/");
   await page.waitForFunction(() => !!window.axio, undefined, { timeout: 60000 });
   await expect(page.locator(".session-loading")).toBeHidden();
-  await expect(page.getByRole("tab", { name: "Phiên 1", exact: true })).toBeVisible();
+  await expect(page.locator(".session-current-name")).toHaveText("Phiên 1");
 }
 async function select(page: Page, name: string) {
+  await page.getByRole("button", { name: "Chọn phiên làm việc", exact: true }).click();
   await page.getByRole("tab", { name, exact: true }).click();
   await expect(page.locator(".session-loading")).toBeHidden();
-  await expect(page.getByRole("tab", { name, exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".session-current-name")).toHaveText(name);
 }
 async function create(page: Page) {
   await page.getByRole("button", { name: "Tạo phiên mới", exact: true }).click();
@@ -31,7 +32,7 @@ test("each session retains independent geometry, chat, composer and undo across 
   await expect(page.locator(".conversation")).toContainText("Hội thoại của phiên đầu.");
   await composer.fill("Bản nháp chỉ dành cho phiên đầu");
   await create(page);
-  await expect(page.getByRole("tab", { name: "Phiên 2", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".session-current-name")).toHaveText("Phiên 2");
   expect(await page.evaluate(() => window.axio!.objects.length)).toBe(0);
   await expect(composer).toHaveValue("");
   await expect(page.locator(".conversation")).not.toContainText("Hội thoại của phiên đầu.");
@@ -53,7 +54,7 @@ test("each session retains independent geometry, chat, composer and undo across 
   await page.reload();
   await page.waitForFunction(() => !!window.axio, undefined, { timeout: 60000 });
   await expect(page.locator(".session-loading")).toBeHidden();
-  await expect(page.getByRole("tab", { name: "Phiên 2", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator(".session-current-name")).toHaveText("Phiên 2");
   await expect(page.locator(".conversation")).toContainText("Hội thoại của phiên thứ hai.");
   expect(await page.evaluate(() => window.axio!.adapter.api.getYcoord("P"))).toBe(2);
   await select(page, "Phiên 1");
@@ -91,27 +92,29 @@ test("clarification and automatic selection continuation remain within their ses
 test("rename, clone and confirmed deletion preserve independent contents, including deleting the last session", async ({ page }) => {
   await ready(page);
   await page.evaluate(() => window.axio!.apply([{ type: "point", label: "P", x: 1, y: 2 }]));
+  await page.getByRole("button", { name: "Chọn phiên làm việc", exact: true }).click();
   await page.getByRole("button", { name: "Quản lý phiên", exact: true }).click();
   await page.getByRole("button", { name: "Đổi tên phiên Phiên 1", exact: true }).click();
   await page.getByRole("textbox", { name: "Tên phiên mới", exact: true }).fill("Bài toán A");
   await page.getByRole("button", { name: "Lưu tên phiên", exact: true }).click();
-  await expect(page.getByRole("tab", { name: "Bài toán A", exact: true })).toBeVisible();
+  await expect(page.locator(".session-current-name")).toHaveText("Bài toán A");
   await page.getByRole("button", { name: "Nhân bản phiên hiện tại", exact: true }).click();
   await expect(page.locator(".session-loading")).toBeHidden();
   await page.getByRole("button", { name: "Đóng quản lý phiên", exact: true }).click();
   await page.evaluate(() => window.axio!.apply([{ type: "move", target: "P", x: 9, y: 2 }]));
   await select(page, "Bài toán A");
   expect(await page.evaluate(() => window.axio!.adapter.api.getXcoord("P"))).toBe(1);
+  await page.getByRole("button", { name: "Chọn phiên làm việc", exact: true }).click();
   await page.getByRole("button", { name: "Quản lý phiên", exact: true }).click();
   await page.getByRole("button", { name: "Xóa phiên Bài toán A (bản sao)", exact: true }).click();
-  await expect(page.getByRole("tab")).toHaveCount(2);
+  await expect(page.locator(".session-list article")).toHaveCount(2);
   await page.getByRole("button", { name: "Xóa phiên và nội dung", exact: true }).click();
-  await expect(page.getByRole("tab")).toHaveCount(1);
+  await expect(page.locator(".session-list article")).toHaveCount(1);
   await page.getByRole("button", { name: "Xóa phiên Bài toán A", exact: true }).click();
   await page.getByRole("button", { name: "Xóa phiên và nội dung", exact: true }).click();
   await expect(page.locator(".session-loading")).toBeHidden();
-  await expect(page.getByRole("tab")).toHaveCount(1);
-  await expect(page.getByRole("tab", { name: "Bài toán A", exact: true })).toHaveCount(0);
+  await expect(page.locator(".session-list article")).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Mở phiên Bài toán A", exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => window.axio!.objects.length)).toBe(0);
   await page.getByRole("button", { name: "Đóng quản lý phiên", exact: true }).click();
   await page.reload();
@@ -197,6 +200,7 @@ test("a newer stored version is protected and the local construction can be fork
   }));
   await page.evaluate(() => window.axio!.apply([{ type: "move", target: "P", x: 7, y: 2 }]));
   await expect(page.locator(".session-save-status")).toHaveText("Chưa lưu phiên");
+  await page.getByRole("button", { name: "Chọn phiên làm việc", exact: true }).click();
   await page.getByRole("button", { name: "Quản lý phiên", exact: true }).click();
   await expect(page.locator(".session-dialog [role=alert]")).toContainText("tab khác");
   await page.getByRole("button", { name: "Nhân bản phiên hiện tại", exact: true }).click();
@@ -221,8 +225,9 @@ test("a failed session write restores the current construction and shows the sto
     };
   });
   await create(page);
-  await expect(page.getByRole("tab")).toHaveCount(1);
+  await expect(page.locator(".session-current-name")).toHaveText("Phiên 1");
   expect(await page.evaluate(() => window.axio!.adapter.api.getXcoord("P"))).toBe(1);
+  await page.getByRole("button", { name: "Chọn phiên làm việc", exact: true }).click();
   await page.getByRole("button", { name: "Quản lý phiên", exact: true }).click();
   await expect(page.locator(".session-dialog [role=alert]")).toContainText("Bộ nhớ trình duyệt đã đầy");
 });

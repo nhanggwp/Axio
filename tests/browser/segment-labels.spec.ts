@@ -26,6 +26,7 @@ test("native polygon edges hide measurements until requested and retain dynamic 
   await page.evaluate(() => window.axio!.undo());
   expect(await page.evaluate((name) => window.axio!.adapter.api.getCaption(name, true), id)).toBe("AC = 7");
   await page.getByRole("button", { name: "Tạo phiên mới", exact: true }).click();
+  await page.getByRole("button", { name: "Chọn phiên làm việc", exact: true }).click();
   await page.getByRole("tab", { name: "Phiên 1", exact: true }).click();
   await expect(page.locator(".session-loading")).toBeHidden();
   await expect(page.locator(".explorer").getByRole("button", { name: "AC 7", exact: true })).toBeVisible();
