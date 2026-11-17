@@ -10,9 +10,11 @@ export function Toolbar({
   disabled,
   onTool,
   onPreset,
+  onFill,
   mode,
 }: {
   disabled: boolean;
+  onFill?: () => void;
   mode: number;
   onTool: (id: number, label: string, hint: string) => void;
   onPreset?: (id: PolygonPresetId, label: string, hint: string) => void;
@@ -123,6 +125,7 @@ export function Toolbar({
             )}
         </div>
       ))}
+      {onFill && <IconButton icon="fill" label="Tô vùng" disabled={disabled} onClick={() => { setOpen(null); onFill(); }} />}
     </nav>
   );
 }

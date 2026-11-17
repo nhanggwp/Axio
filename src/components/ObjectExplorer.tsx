@@ -8,7 +8,8 @@ const categories = [
   ["ĐIỂM", ["point"]],
   ["ĐƯỜNG & ĐOẠN THẲNG", ["line", "segment", "ray", "vector"]],
   ["ĐA GIÁC", POLYGON_TYPES],
-  ["ĐƯỜNG TRÒN", ["circle", "conic", "conicpart"]],
+  ["ĐƯỜNG TRÒN", ["circle", "conic"]],
+  ["CUNG & VÙNG TRÒN", ["arc", "sector", "conicpart"]],
   ["SỐ ĐO", ["numeric", "angle", "text"]],
 ] as const;
 export function ObjectExplorer({
@@ -85,6 +86,7 @@ export function ObjectExplorer({
   );
 }
 export function formatObject(o: GeometryObject) {
+  if (["arc", "sector"].includes(o.type) && (o.opacity ?? 0) > 0) return `Vùng tô · ${Math.round(o.opacity! * 100)}%`;
   if (o.type === "point")
     return `(${Number(o.x?.toFixed(2))}, ${Number(o.y?.toFixed(2))})`;
   return o.value.replace(new RegExp("^" + o.name + "\\s*[=:]\\s*"), "");

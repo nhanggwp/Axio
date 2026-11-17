@@ -29,6 +29,8 @@ export const actionSchema = z.discriminatedUnion("type", [
       position: z.object({ x: n, y: n }).strict().optional(),
       kind: z.enum([
         "point_on",
+        "circular_segment",
+        "circular_sector",
         "segment",
         "line",
         "ray",
@@ -61,6 +63,7 @@ export const actionSchema = z.discriminatedUnion("type", [
       ]),
       refs: z.array(labelSchema).min(1).max(12),
       value: n.optional(),
+      part: z.enum(["minor", "major"]).optional(),
     })
     .strict(),
   z
@@ -83,6 +86,7 @@ export const actionSchema = z.discriminatedUnion("type", [
       label: z.enum(["name","value","name_value","hidden"]).optional(),
       visible: z.boolean().optional(),
       thickness: z.number().int().min(1).max(13).optional(),
+      opacity: z.number().finite().min(0).max(1).optional(),
     })
     .strict(),
   z
@@ -176,6 +180,7 @@ export const objectSchema = z.object({
   auxiliary: z.boolean().optional(),
   color: z.string().max(20),
   labelVisible: z.boolean().optional(),
+  opacity: z.number().finite().min(0).max(1).optional(),
   thickness: z.number().optional(),
   lineStyle: z.number().optional(),
   vertices: z.array(z.string().max(64)).min(3).max(100).optional(),

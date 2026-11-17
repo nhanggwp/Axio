@@ -25,8 +25,10 @@ import { SessionControls } from "../sessions/SessionControls";
 import type { ChatBridge } from "../sessions/model";
 import { shouldShowWelcome, WelcomeScreen } from "../components/WelcomeScreen";
 import { EditorMenu } from "../components/EditorMenu";
+import { RegionFillDialog } from "../components/RegionFillDialog";
 import { EquationInput } from "../components/EquationInput";
 export default function App() {
+  const [fillOpen, setFillOpen] = useState(false);
   const [welcomeOpen, setWelcomeOpen] = useState(shouldShowWelcome);
   const welcomeWasOpen = useRef(welcomeOpen);
   const session = authClient.useSession();
@@ -160,7 +162,7 @@ export default function App() {
   }, [controller, sessions.pendingSave, sessions.saving, sessions.error, sessions.ready]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (sessions.busy || welcomeOpen) return;
+      if (sessions.busy || welcomeOpen || fillOpen) return;
       const modalEscape = e.key === "Escape" && e.target instanceof Element && !!e.target.closest('[role="dialog"]');
       if (!modalEscape && (
         e.target instanceof HTMLInputElement ||
@@ -206,7 +208,7 @@ export default function App() {
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
-  }, [controller, preview, dialog, authView, accountDocuments, sessions.busy, welcomeOpen]);
+  }, [controller, preview, dialog, authView, accountDocuments, sessions.busy, welcomeOpen, fillOpen]);
   function ready(adapter: GeoGebraAdapter) {
     controllerRef.current?.dispose();
     const c = new GeometryController(adapter);
@@ -367,8 +369,10 @@ export default function App() {
           <span>Trợ lý</span>
         </button>
       </header>
+      {fillOpen && controller && <RegionFillDialog controller={controller} onClose={() => setFillOpen(false)} onCreated={() => { setFillOpen(false); setMode(0); setHint("Đã tô vùng · kéo các điểm để thay đổi hình"); setRight(window.innerWidth > 850 ? "properties" : null); }} />}
       <div className="editor">
         <Toolbar
+          onFill={() => setFillOpen(true)}
           disabled={!controller || !!preview}
           mode={mode}
           onTool={(id, label, h) => {

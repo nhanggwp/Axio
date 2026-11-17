@@ -1,6 +1,7 @@
+import { circularRegionArguments } from "./RegionFill";
 import { applyObjectLabel } from "./segmentLabels";
 import { nativeNumber } from "./nativeNumber";
-import { supportsStroke } from "./GeometryState";
+import { supportsFill, supportsStroke } from "./GeometryState";
 import { actionSchema, labelSchema, type GeometryAction, type GeometryCheck } from "../../shared/actions";
 import { validateGeometry } from "./GeometryChecks";
 import { GeoGebraAdapter } from "./GeoGebraAdapter";
@@ -12,6 +13,8 @@ const specifications: Record<
   string,
   { command: string; counts: number[]; types?: string[][]; result: string }
 > = {
+  circular_segment: { command: "CircularArc", counts: [3], types: [["circle"], ["point"], ["point"]], result: "arc" },
+  circular_sector: { command: "CircularSector", counts: [3], types: [["circle"], ["point"], ["point"]], result: "sector" },
   point_on: { command: "Point", counts: [1], types: [["line", "segment", "ray", "circle", "conic"]], result: "point" },
   segment: {
     command: "Segment",
@@ -355,7 +358,8 @@ export function executeActions(
           )
             throw new Error("Cần hai điểm phân biệt.");
         }
-        let refs = [...a.refs];
+        if (a.part !== undefined && !["circular_segment", "circular_sector"].includes(a.kind)) throw new Error("Chọn cung nhỏ/lớn chỉ dùng cho vùng tròn.");
+        let refs = ["circular_segment", "circular_sector"].includes(a.kind) ? circularRegionArguments(api, a.refs, a.part ?? "minor") : [...a.refs];
         if (a.kind === "intersection") {
           const multiple = a.refs.some((name) => ["circle", "conic"].includes(api.getObjectType(name)));
           if (a.value !== undefined || multiple) {
@@ -461,6 +465,10 @@ export function executeActions(
       }
       if (a.type === "style") {
         need(a.target);
+        if (a.opacity !== undefined) {
+          if (!supportsFill(api.getObjectType(a.target))) throw new Error("Chỉ tô màu cho đối tượng có miền diện tích: đa giác, hình tròn, hình quạt hoặc hình viên phân.");
+          api.setFilling(a.target, a.opacity);
+        }
         if (a.color) adapter.color(a.target, a.color);
         if (a.label) applyObjectLabel(api, a.target, a.label);
         if (a.visible !== undefined) api.setVisible(a.target, a.visible);
@@ -508,6 +516,13 @@ export function executeActions(
           } else if (a.type !== "altitude") adapter.color(name, "#23232D");
           if (type === "point") api.setPointSize(name, 4);
         }
+      }
+      if (a.type === "construct" && ["circular_segment", "circular_sector"].includes(a.kind)) {
+        adapter.color(a.label, "#09EFF8");
+        api.setFilling(a.label, 0.4);
+        api.setLineThickness(a.label, 0);
+        api.setLabelVisible(a.label, false);
+        api.setCaption(a.label, `axio-region:${a.kind}:${a.part ?? "minor"}`);
       }
       if (a.type === "style" && a.visible !== undefined) visibility.set(a.target, a.visible);
     }

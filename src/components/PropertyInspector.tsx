@@ -1,6 +1,7 @@
+import { circularRegionInfo } from "../geometry/RegionFill";
 import { isMeasurementObject, measurementVisible, setMeasurementVisible } from "../geometry/segmentLabels";
 import { geometryNames } from "../../shared/geometryNames";
-import { supportsStroke } from "../geometry/GeometryState";
+import { supportsFill, supportsStroke } from "../geometry/GeometryState";
 import { useState } from "react";
 import type { GeometryController } from "../geometry/GeometryController";
 import { labelSchema } from "../../shared/actions";
@@ -25,6 +26,8 @@ const OBJECT_TYPE_LABELS: Record<string, string> = {
   circle: "Đường tròn",
   conic: "Đường conic",
   conicpart: "Cung conic",
+  arc: "Cung / hình viên phân",
+  sector: "Hình quạt tròn",
   angle: "Góc",
   numeric: "Số đo",
   text: "Văn bản",
@@ -54,6 +57,7 @@ export function PropertyInspector({
   const o = controller.objects.find((o) => o.name === controller.selection);
   const [rename, setRename] = useState("");
   if (!o) return null;
+  const region = circularRegionInfo(controller.adapter.api, o.name);
   const controls = !o.moveable ? controller.controlPoints(o.name) : [];
   const change = (fn: () => void) => {
     try {
@@ -67,7 +71,7 @@ export function PropertyInspector({
       geometryNames(d.definition).includes(o.name),
     )
     .map((d) => d.name);
-  const typeLabel = OBJECT_TYPE_LABELS[o.type] ?? "Đối tượng";
+  const typeLabel = region ? (region.kind === "circular_segment" ? "Hình viên phân" : "Hình quạt tròn") : OBJECT_TYPE_LABELS[o.type] ?? "Đối tượng";
   return (
     <aside className="inspector">
       <header>
@@ -165,7 +169,7 @@ export function PropertyInspector({
       )}
       <p className="eyebrow">QUAN HỆ PHỤ THUỘC</p>
       <p className="definition">
-        {o.definition || "Không có đối tượng gốc"}
+        {region ? `${region.kind === "circular_segment" ? "Giới hạn bởi cung và dây" : "Giới hạn bởi hai bán kính và cung"} ${region.points.join("")} · cung ${region.part === "minor" ? "nhỏ" : "lớn"} của đường tròn ${region.circle}.` : o.definition || "Không có đối tượng gốc"}
         {dependents.length > 0 && (
           <>
             <br />
@@ -175,7 +179,7 @@ export function PropertyInspector({
       </p>
       <p className="eyebrow">HIỂN THỊ</p>
       <div className="color-picker">
-        <span>Nét vẽ</span>
+        <span>{supportsFill(o.type) ? "Màu hình / vùng" : "Nét vẽ"}</span>
         {SWATCH_COLORS.map((c) => (
           <button
             key={c}
@@ -196,6 +200,7 @@ export function PropertyInspector({
           }
         />
       </div>
+      {supportsFill(o.type) && <label className="field region-opacity">Độ đậm màu vùng · {Math.round((o.opacity ?? 0) * 100)}%<input type="range" min="0" max="100" aria-label="Độ đậm màu vùng" value={Math.round((o.opacity ?? 0) * 100)} onChange={e => controller.apply([{ type: "style", target: o.name, opacity: Number(e.target.value) / 100 }])} /><small>0%: không tô · 100%: màu đặc. Dùng bảng màu bên trên để đổi màu vùng.</small></label>}
       <div className="coordinate-fields">
         <label className="field">
           Độ dày

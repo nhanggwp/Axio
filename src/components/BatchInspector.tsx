@@ -1,4 +1,4 @@
-import { supportsStroke } from "../geometry/GeometryState";
+import { supportsFill, supportsStroke } from "../geometry/GeometryState";
 import type { GeometryController } from "../geometry/GeometryController";
 import { IconButton } from "./Icon";
 import { StrokeWidthSelect } from "./StrokeWidthSelect";
@@ -80,6 +80,7 @@ export function BatchInspector({
           }}
         />
       </div>
+      {selected.some(o => supportsFill(o.type)) && <label className="field">Độ đậm màu các vùng<input type="range" min="0" max="100" aria-label="Độ đậm màu chung" value={Math.round((selected.find(o => supportsFill(o.type))?.opacity ?? 0) * 100)} onChange={e => change(() => controller.apply(selected.filter(o => supportsFill(o.type)).map(o => ({ type: "style", target: o.name, opacity: Number(e.target.value) / 100 }))))} /></label>}
       <label className="field">
         Độ dày
         <StrokeWidthSelect

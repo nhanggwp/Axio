@@ -1488,3 +1488,13 @@ button.welcome-start:hover:not(:disabled) { background: var(--cyan); border-colo
 @media (max-width: 600px) {
   .composer textarea { max-height: clamp(52px, calc((min(100dvh, var(--app-height, 100dvh)) - 84px) * .56 - 136px), 144px); }
 }
+
+.region-form { display: flex; flex-direction: column; gap: 16px; }
+.region-form .field { margin: 0; }
+.region-form select { width: 100%; min-width: 0; }
+.region-form input[type="range"], .region-opacity input { width: 100%; accent-color: var(--purple); }
+.region-color input { width: 100%; min-height: 40px; padding: 4px; border: 1px solid var(--border); border-radius: 6px; background: transparent; }
+.region-form .actions { justify-content: flex-end; }
+.region-help { line-height: 1.6; color: #61616b; }
+.region-form [role="alert"] { color: var(--pink); }
+@media(max-width:600px) { .region-dialog { padding: 18px; } .region-dialog select { font-size: 16px; } }

@@ -1,3 +1,4 @@
+import { fillingFromXML } from "./GeometryState";
 import { ensureBisectorMarks } from "./bisectorMarks";
 import { contentBounds, svgCanvas, whiteSVG } from "./exportImage";
 import { configureCoordinateAxes, formatPointCoordinates } from "./coordinateDisplay";
@@ -56,6 +57,7 @@ export class GeoGebraAdapter {
       visible: this.api.getVisible(name),
       auxiliary: /<auxiliary\b[^>]*val="true"/.test(this.api.getXML(name)),
       color: this.api.getColor(name),
+      opacity: fillingFromXML(this.api.getXML(name)),
       labelVisible: /<show[^>]*label="true"/.test(this.api.getXML(name)),
       thickness: this.api.getLineThickness(name),
       lineStyle: this.api.getLineStyle(name),

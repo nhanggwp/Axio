@@ -37,6 +37,8 @@ export function supportsStroke(type: string) {
     "circle",
     "conic",
     "conicpart",
+    "arc",
+    "sector",
     "angle",
     "polyline",
     "locus",
@@ -46,4 +48,13 @@ export function supportsStroke(type: string) {
     "hyperbola",
     "parabola",
   ].includes(type);
+}
+
+/** Native arcs fill the circular segment bounded by their arc and chord. */
+export function supportsFill(type: string) {
+  return ["polygon", "triangle", "quadrilateral", "pentagon", "hexagon", "heptagon", "octagon", "nonagon", "decagon", "circle", "ellipse", "conic", "conicpart", "arc", "sector", "angle"].includes(type);
+}
+export function fillingFromXML(xml: string): number {
+  const alpha = Number(xml.match(/<objColor\b[^>]*\balpha="([^"]+)"/)?.[1] ?? 0);
+  return Number.isFinite(alpha) ? Math.max(0, Math.min(1, alpha)) : 0;
 }

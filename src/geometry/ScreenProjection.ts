@@ -1,3 +1,4 @@
+import { circularRegionOutline } from "./RegionFill";
 import { geometryNames } from "../../shared/geometryNames";
 import type { GeometryController } from "./GeometryController";
 import { isPolygonType } from "./triangleVertices";
@@ -175,6 +176,11 @@ export function screenShapes(
           )
             points.push(point(a.value));
       }
+      kind = "polygon";
+    } else if (["arc", "sector"].includes(o.type)) {
+      const outline = circularRegionOutline(api, o.name);
+      if (!outline || ((o.opacity ?? 0) === 0 && (o.thickness ?? 0) === 0)) continue;
+      points = outline.map(p => project(p.x, p.y));
       kind = "polygon";
     } else if (o.type === "circle") {
       const m = el.querySelector("matrix");

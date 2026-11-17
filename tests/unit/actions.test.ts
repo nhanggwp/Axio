@@ -103,3 +103,11 @@ it('permits explicit label choices without accepting arbitrary caption commands'
  for(const label of ['name','value','name_value','hidden'])expect(actionSchema.safeParse({type:'style',target:'AB',label}).success).toBe(true);
  expect(actionSchema.safeParse({type:'style',target:'AB',label:'Execute(...)'}).success).toBe(false);
 });
+
+it('validates region styles and circle-region plans without allowing injected commands',()=>{
+ for(const kind of ['circular_segment','circular_sector'])expect(actionSchema.safeParse({type:'construct',kind,label:'regionAB',refs:['c','A','B'],part:'minor',auxiliary:false}).success).toBe(true);
+ for(const opacity of [0,.45,1])expect(actionSchema.safeParse({type:'style',target:'regionAB',opacity}).success).toBe(true);
+ for(const opacity of [-.1,1.1,Infinity,'0.5'])expect(actionSchema.safeParse({type:'style',target:'regionAB',opacity}).success).toBe(false);
+ expect(actionSchema.safeParse({type:'construct',kind:'circular_segment',label:'r',refs:['c','A);Execute(x)','B'],part:'minor'}).success).toBe(false);
+ expect(actionSchema.safeParse({type:'construct',kind:'circular_segment',label:'r',refs:['c','A','B'],part:'whatever'}).success).toBe(false);
+});
