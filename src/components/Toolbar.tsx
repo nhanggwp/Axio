@@ -1,3 +1,4 @@
+import { solidKinds, solidNames, type SolidKind } from "../../shared/solids";
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -11,10 +12,16 @@ export function Toolbar({
   onTool,
   onPreset,
   onFill,
+  onSolid,
+  spaceMode,
+  onSpaceModeChange,
   mode,
 }: {
   disabled: boolean;
   onFill?: () => void;
+  spaceMode: boolean;
+  onSpaceModeChange: (enabled: boolean) => void;
+  onSolid?: (kind: SolidKind) => void;
   mode: number;
   onTool: (id: number, label: string, hint: string) => void;
   onPreset?: (id: PolygonPresetId, label: string, hint: string) => void;
@@ -52,7 +59,7 @@ export function Toolbar({
             icon={g.icon}
             label={g.title}
             disabled={disabled}
-            className={g.tools.some((t) => t[1] === mode) ? "active" : ""}
+            className={g.tools.some((t) => t[1] === mode) || (g.title === "HÌNH KHÔNG GIAN" && spaceMode) ? "active" : ""}
             aria-expanded={open === i}
             onClick={(event) => {
               anchor.current = event.currentTarget;
@@ -115,10 +122,13 @@ export function Toolbar({
                       </div>
                     </>
                   )}
-                  <small>
-                    Chọn công cụ hoặc chèn mẫu đa giác rồi kéo chỉnh trên vùng
-                    vẽ.
-                  </small>
+                  {g.title === "HÌNH KHÔNG GIAN" && onSolid && <>
+                    <button type="button" className={`space-mode-switch${spaceMode ? " active" : ""}`} aria-label="Chế độ không gian" aria-pressed={spaceMode} disabled={disabled} onClick={() => onSpaceModeChange(!spaceMode)}><Icon name="solid" />Chế độ không gian <b>{spaceMode ? "Bật" : "Tắt"}</b></button>
+                    <small>Bật: cạnh khuất nét đứt. Tắt: tất cả cạnh nét liền. Chèn hình sẽ bật chế độ này.</small>
+                    {solidKinds.map(kind => <button key={kind} onClick={() => { onSolid(kind); setOpen(null); }}><Icon name="solid" />{solidNames[kind]}</button>)}
+                    <small>Hình biểu diễn 2D · cạnh khuất nét đứt tự cập nhật khi kéo điểm.</small>
+                  </>}
+                  <small>{g.title === "HÌNH KHÔNG GIAN" ? "Chọn mẫu để vẽ nhanh, rồi kéo các đỉnh để chỉnh hình biểu diễn." : "Chọn công cụ hoặc chèn mẫu đa giác rồi kéo chỉnh trên vùng vẽ."}</small>
                 </div>
               </>,
               document.body,

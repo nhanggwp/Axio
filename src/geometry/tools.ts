@@ -75,6 +75,7 @@ export const toolGroups = [
       ["Vị tự", 33, "Chọn đối tượng, tâm rồi nhập tỉ số."],
     ],
   },
+  { title: "HÌNH KHÔNG GIAN", icon: "solid", tools: [] },
   {
     title: "ĐỐI TƯỢNG",
     icon: "delete",

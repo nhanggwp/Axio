@@ -1,3 +1,5 @@
+import { solidMember } from "../geometry/SolidProjection";
+import { solidNames } from "../../shared/solids";
 import { circularRegionInfo } from "../geometry/RegionFill";
 import { isMeasurementObject, measurementVisible, setMeasurementVisible } from "../geometry/segmentLabels";
 import { geometryNames } from "../../shared/geometryNames";
@@ -57,6 +59,8 @@ export function PropertyInspector({
   const o = controller.objects.find((o) => o.name === controller.selection);
   const [rename, setRename] = useState("");
   if (!o) return null;
+  const owner = solidMember(controller.adapter.api, o.name);
+  const automaticEdge = owner?.edges.includes(o.name) ?? false, solidFace = owner?.faces.includes(o.name) ?? false;
   const region = circularRegionInfo(controller.adapter.api, o.name);
   const controls = !o.moveable ? controller.controlPoints(o.name) : [];
   const change = (fn: () => void) => {
@@ -71,7 +75,7 @@ export function PropertyInspector({
       geometryNames(d.definition).includes(o.name),
     )
     .map((d) => d.name);
-  const typeLabel = region ? (region.kind === "circular_segment" ? "Hình viên phân" : "Hình quạt tròn") : OBJECT_TYPE_LABELS[o.type] ?? "Đối tượng";
+  const typeLabel = o.solid ? solidNames[o.solid.kind] : region ? (region.kind === "circular_segment" ? "Hình viên phân" : "Hình quạt tròn") : OBJECT_TYPE_LABELS[o.type] ?? "Đối tượng";
   return (
     <aside className="inspector">
       <header>
@@ -79,7 +83,7 @@ export function PropertyInspector({
         <IconButton icon="close" label="Đóng thuộc tính" onClick={onClose} />
       </header>
       <h2>
-        {typeLabel} {o.displayName ?? o.name}
+        {typeLabel} {o.solid ? o.name : o.displayName ?? o.name}
       </h2>
       <label className="field">
         Tên
@@ -167,9 +171,16 @@ export function PropertyInspector({
           Xóa liên kết
         </button>
       )}
+      {o.solid && <div className="solid-properties">
+        <p>{o.solid.faces.length} mặt · {o.solid.vertices.length} đỉnh · {o.solid.edges.length} cạnh</p>
+        <small>Hình biểu diễn trên mặt phẳng. Bật chế độ không gian để cạnh khuất hiện nét đứt; độ dài xiên trên màn hình không phải độ dài thật.</small>
+        <p>Kích thước thật: {o.solid.dimensions.width} × {o.solid.dimensions.depth} × {o.solid.dimensions.height}</p>
+        <p className="eyebrow">CHỌN MẶT ĐỂ TÔ MÀU</p>
+        <div className="solid-face-list">{o.solid.faces.map(face => <button key={face} onClick={() => controller.select(face)}>Mặt {controller.objects.find(object => object.name === face)?.displayName ?? face}</button>)}</div>
+      </div>}
       <p className="eyebrow">QUAN HỆ PHỤ THUỘC</p>
       <p className="definition">
-        {region ? `${region.kind === "circular_segment" ? "Giới hạn bởi cung và dây" : "Giới hạn bởi hai bán kính và cung"} ${region.points.join("")} · cung ${region.part === "minor" ? "nhỏ" : "lớn"} của đường tròn ${region.circle}.` : o.definition || "Không có đối tượng gốc"}
+        {o.solid ? `Các đáy và cạnh bên có liên kết. Điểm điều khiển: ${controls.join(", ")}.` : region ? `${region.kind === "circular_segment" ? "Giới hạn bởi cung và dây" : "Giới hạn bởi hai bán kính và cung"} ${region.points.join("")} · cung ${region.part === "minor" ? "nhỏ" : "lớn"} của đường tròn ${region.circle}.` : o.definition || "Không có đối tượng gốc"}
         {dependents.length > 0 && (
           <>
             <br />
@@ -206,7 +217,7 @@ export function PropertyInspector({
           Độ dày
           <StrokeWidthSelect
             label="Độ dày"
-            objects={[o]}
+            objects={o.solid ? [{ ...o, type: "segment" }] : solidFace ? [{ ...o, type: "solid_face" }] : [o]}
             onChange={(width) =>
               controller.apply([
                 {
@@ -223,7 +234,7 @@ export function PropertyInspector({
           <select
             value={o.lineStyle ?? 0}
             aria-label="Kiểu nét"
-            disabled={!supportsStroke(o.type)}
+            disabled={!supportsStroke(o.type) || automaticEdge || solidFace}
             onChange={(e) =>
               change(() =>
                 controller.adapter.api.setLineStyle(
@@ -241,17 +252,15 @@ export function PropertyInspector({
           </select>
         </label>
       </div>
+      {automaticEdge && <small>Kiểu nét cạnh khuất được tự tính theo chế độ không gian.</small>}
+      {solidFace && <small>Màu và độ đậm áp dụng cho mặt. Chọn cạnh để thay đổi nét vẽ.</small>}
       {isMeasurementObject(controller.adapter.api,o.name) && <label className="check"><input type="checkbox" checked={measurementVisible(controller.adapter.api,o.name)} onChange={e => change(() => setMeasurementVisible(controller.adapter.api,o.name,e.target.checked))}/>Hiện số đo</label>}
       <label className="check">
         <input
           type="checkbox"
           key={o.name}
           checked={o.labelVisible ?? false}
-          onChange={(e) =>
-            change(() =>
-              controller.adapter.api.setLabelVisible(o.name, e.target.checked),
-            )
-          }
+          onChange={(e) => o.solid ? controller.apply([{ type: "style", target: o.name, label: e.target.checked ? "name" : "hidden" }]) : change(() => controller.adapter.api.setLabelVisible(o.name, e.target.checked))}
         />
         Hiện nhãn
       </label>

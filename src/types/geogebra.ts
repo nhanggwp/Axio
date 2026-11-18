@@ -26,6 +26,7 @@ export interface GGBApi {
   setAuxiliary(name: string, auxiliary: boolean): void;
   getCaption(name: string, substitutePlaceholders: boolean): string;
   setLineThickness(name: string, width: number): void;
+  setLayer(name: string, layer: number): void;
   setLineStyle(name: string, style: number): void;
   setPointSize(name: string, size: number): void;
   setFilling(name: string, amount: number): void;

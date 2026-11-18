@@ -34,7 +34,7 @@ export async function askAssistant(
       selection: controller.selection,
       selections: controller.selectedNames,
       objects: controller.adapter.objects(),
-      view: {axes:controller.adapter.viewState().axes,grid:controller.adapter.viewState().grid},
+      view: {axes:controller.adapter.viewState().axes,grid:controller.adapter.viewState().grid,spaceMode:controller.spaceMode},
       history: { canUndo: controller.history.canUndo, canRedo: controller.history.canRedo },
       ...(previewObjects?.length ? { preview_objects: previewObjects } : {}),
       conversation: conversation

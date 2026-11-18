@@ -1,3 +1,4 @@
+import { deleteSolid, solidRecords, spaceModeEnabled, setSpaceMode } from "./SolidProjection";
 import { applyObjectLabel, hasMeasurementIntent, isMeasurementObject, measurementVisible, setMeasurementVisible } from "./segmentLabels";
 import { geometryNames } from "../../shared/geometryNames";
 import { GeoGebraAdapter } from "./GeoGebraAdapter";
@@ -85,6 +86,7 @@ export class GeometryController {
     hasRigidConstraint: boolean;
   } | null = null;
   constructor(readonly adapter: GeoGebraAdapter) {
+    adapter.ensureSolidEdges();
     adapter.ensureBisectorMarks();
     adapter.formatSegmentLabels();
     adapter.formatPointLabels();
@@ -102,6 +104,8 @@ export class GeometryController {
     a.registerClickListener(this.clicked);
     a.registerClientListener(this.client);
   }
+  get spaceMode() { return spaceModeEnabled(this.adapter.api); }
+  setSpaceMode(enabled: boolean) { this.mutate(() => setSpaceMode(this.adapter.api, enabled)); this.drawingFeedback = enabled ? "Chế độ không gian · cạnh khuất nét đứt tự động" : "Chế độ hình phẳng · tất cả cạnh khối nét liền"; this.emit(); }
   get interacting() {
     return this.dragging;
   }
@@ -128,6 +132,7 @@ export class GeometryController {
   }
   sync = () => {
     if (this.disposed) return;
+    this.adapter.ensureSolidEdges();
     this.adapter.ensureBisectorMarks();
     this.adapter.formatSegmentLabels();
     this.adapter.formatPointLabels();
@@ -382,7 +387,7 @@ export class GeometryController {
       }
       return null;
     }
-    if (isPolygonType(type) || ["segment", "circle", "line", "ray", "vector"].includes(type)) {
+    if (isPolygonType(type) || ["segment", "circle", "line", "ray", "vector", "list"].includes(type)) {
       const comp = this.connectedComponent([hit]);
       const { freePoints, pathPoints } = this.collectGroupSnapshots(comp);
       if (freePoints.length > 0 || pathPoints.length > 0) {
@@ -1019,13 +1024,17 @@ export class GeometryController {
     return allUnlinked;
   }
   deletionImpact(names = this.selectedNames) {
-    return affectedByDeletion(this.objects, names);
+    const roots = solidRecords(this.adapter.api).filter(s => names.includes(s.name));
+    return affectedByDeletion(this.objects, [...names, ...roots.flatMap(s => [...s.vertices, ...s.faces, ...s.edges])]);
   }
   deleteSelection() {
     const names = [...this.selectedNames];
     this.mutate(() => {
-      for (const name of names)
-        if (this.adapter.api.exists(name)) this.adapter.api.deleteObject(name);
+      for (const name of names) {
+        const solid = solidRecords(this.adapter.api).find(s => s.name === name);
+        if (solid) deleteSolid(this.adapter.api, solid);
+        else if (this.adapter.api.exists(name)) this.adapter.api.deleteObject(name);
+      }
     });
     this.select(null);
   }
@@ -1048,6 +1057,7 @@ export class GeometryController {
     this.paused = true;
     try {
       fn();
+      this.adapter.ensureSolidEdges();
       this.adapter.ensureBisectorMarks();
       this.adapter.formatSegmentLabels();
       this.adapter.formatPointLabels();
@@ -1177,6 +1187,7 @@ export class GeometryController {
       });
       this.adapter.api.setPerspective("G");
       this.adapter.api.setRounding("2");
+      this.adapter.ensureSolidEdges();
       this.adapter.ensureBisectorMarks();
       this.adapter.formatSegmentLabels();
       this.adapter.formatPointLabels();

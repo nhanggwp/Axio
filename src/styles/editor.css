@@ -1498,3 +1498,12 @@ button.welcome-start:hover:not(:disabled) { background: var(--cyan); border-colo
 .region-help { line-height: 1.6; color: #61616b; }
 .region-form [role="alert"] { color: var(--pink); }
 @media(max-width:600px) { .region-dialog { padding: 18px; } .region-dialog select { font-size: 16px; } }
+
+.solid-properties { display: flex; flex-direction: column; gap: 12px; line-height: 1.5; }
+.solid-face-list { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.solid-face-list button { font-size: 12px; min-width: 0; overflow-wrap: anywhere; }
+
+.space-mode-switch { border-color: var(--purple); margin: 4px 0; }
+.space-mode-switch b { margin-left: auto; color: var(--purple); }
+.statusbar .space-mode-status { display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
+.space-mode-status .icon { width: 14px; height: 14px; }

@@ -1,3 +1,5 @@
+import { insertSolidPreset } from "../geometry/solidPresets";
+import { solidNames } from "../../shared/solids";
 import { useEffect, useRef, useState } from "react";
 import { GeometryCanvas } from "../components/GeometryCanvas";
 import { GeometryController } from "../geometry/GeometryController";
@@ -268,7 +270,7 @@ export default function App() {
       if (constructionKey(controller.adapter.snapshot()) !== preview.baseline)
         throw new Error("Hình đã thay đổi. Hãy yêu cầu xem trước lại.");
       controller.apply(preview.reply.actions, preview.reply.checks);
-      if (preview.reply.actions.some((a) => a.type === "point" || a.type === "construct" || a.type === "altitude" || (a.type === "view" && a.axes))) controller.adapter.resetView();
+      if (preview.reply.actions.some((a) => a.type === "solid" || a.type === "point" || a.type === "construct" || a.type === "altitude" || (a.type === "view" && a.axes))) controller.adapter.resetView();
       controller.setMode(0);
       setMode(0);
       setHint("Di chuyển · kéo điểm điều khiển để chỉnh hình");
@@ -372,7 +374,10 @@ export default function App() {
       {fillOpen && controller && <RegionFillDialog controller={controller} onClose={() => setFillOpen(false)} onCreated={() => { setFillOpen(false); setMode(0); setHint("Đã tô vùng · kéo các điểm để thay đổi hình"); setRight(window.innerWidth > 850 ? "properties" : null); }} />}
       <div className="editor">
         <Toolbar
+          spaceMode={controller?.spaceMode ?? false}
+          onSpaceModeChange={enabled => controller?.setSpaceMode(enabled)}
           onFill={() => setFillOpen(true)}
+          onSolid={kind => { if (!controller) return; try { insertSolidPreset(controller, kind); setMode(0); setHint(`${solidNames[kind]} · kéo đỉnh để chỉnh hình biểu diễn; cạnh khuất tự đổi nét đứt.`); } catch (e) { report(e); } }}
           disabled={!controller || !!preview}
           mode={mode}
           onTool={(id, label, h) => {
@@ -421,10 +426,11 @@ export default function App() {
                       executeActions(adapter, preview.reply.actions, preview.reply.checks);
                       validateDynamicGeometry(adapter, preview.reply.checks);
                     }
-                    if (preview.reply.actions.some((a) => a.type === "point" || a.type === "construct" || a.type === "altitude" || (a.type === "view" && a.axes))) adapter.resetView();
+                    if (preview.reply.actions.some((a) => a.type === "solid" || a.type === "point" || a.type === "construct" || a.type === "altitude" || (a.type === "view" && a.axes))) adapter.resetView();
+                    const solidEdges = new Set(adapter.objects().flatMap(object => object.solid?.edges ?? []));
                     for (const o of adapter.objects())
                       if (
-                        !controller?.adapter.api.exists(o.name) &&
+                        !controller?.adapter.api.exists(o.name) && !solidEdges.has(o.name) &&
                         ["line", "segment", "circle", "conic"].includes(o.type)
                       )
                         adapter.api.setLineStyle(o.name, 1);
@@ -569,7 +575,7 @@ export default function App() {
       </div>
       {sessions.busy && <div className="session-loading" role="status"><span className="spinner" />Đang cập nhật phiên làm việc…</div>}
       <footer className="statusbar">
-        <span>Hình học 2D</span>
+        <button className="space-mode-status" aria-label="Bật / tắt chế độ hình không gian" aria-pressed={controller?.spaceMode ?? false} disabled={!controller || !!preview} onClick={() => controller?.setSpaceMode(!controller.spaceMode)}><Icon name="solid" />{controller?.spaceMode ? "Không gian" : "Hình phẳng"}</button>
         <button
           disabled={!controller || !!preview}
           onClick={() => {

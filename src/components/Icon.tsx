@@ -20,6 +20,7 @@ const icons: Record<string, string> = {
   undo: "imgKhung17",
 };
 const symbols: Record<string, string> = {
+  solid: "m12 2 9 5v10l-9 5-9-5V7l9-5ZM3 7l9 5 9-5M12 12v10",
   fill: "m7 3 10 10-7 7-9-9 7-7M3 12h14M19 14s3 3 3 5a3 3 0 0 1-6 0c0-2 3-5 3-5Z",
   more: "M5 12h.01M12 12h.01M19 12h.01",
   chevron: "m7 10 5 5 5-5",

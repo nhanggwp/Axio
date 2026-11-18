@@ -5,6 +5,7 @@ import { POLYGON_TYPES } from "../geometry/triangleVertices";
 import type { GeometryObject } from "../../shared/actions";
 import { IconButton } from "./Icon";
 const categories = [
+  ["HÌNH KHÔNG GIAN", ["solid"]],
   ["ĐIỂM", ["point"]],
   ["ĐƯỜNG & ĐOẠN THẲNG", ["line", "segment", "ray", "vector"]],
   ["ĐA GIÁC", POLYGON_TYPES],
@@ -86,6 +87,7 @@ export function ObjectExplorer({
   );
 }
 export function formatObject(o: GeometryObject) {
+  if (o.solid) return `${o.solid.faces.length} mặt · ${o.solid.vertices.length} đỉnh · ${o.solid.edges.length} cạnh`;
   if (["arc", "sector"].includes(o.type) && (o.opacity ?? 0) > 0) return `Vùng tô · ${Math.round(o.opacity! * 100)}%`;
   if (o.type === "point")
     return `(${Number(o.x?.toFixed(2))}, ${Number(o.y?.toFixed(2))})`;

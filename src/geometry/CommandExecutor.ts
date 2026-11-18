@@ -1,3 +1,5 @@
+import { solidTopology } from "../../shared/solids";
+import { createSolid, solidRecords, setSolidVisible, deleteSolid, refreshSolidEdges, setSpaceMode, solidMember } from "./SolidProjection";
 import { circularRegionArguments } from "./RegionFill";
 import { applyObjectLabel } from "./segmentLabels";
 import { nativeNumber } from "./nativeNumber";
@@ -153,11 +155,12 @@ function synthesizePolygonsFromSegments(
   adapter: GeoGebraAdapter,
   initialNames: Set<string>,
   roles: Map<string, boolean>,
+  solidEdges: Set<string>,
 ) {
   const api = adapter.api;
   const adj = new Map<string, Set<string>>();
   for (const name of api.getAllObjectNames("segment")) {
-    if (initialNames.has(name) || roles.get(name) === true) continue;
+    if (initialNames.has(name) || roles.get(name) === true || solidEdges.has(name)) continue;
     const ends = segmentEndpoints(api, name);
     if (!ends) continue;
     const [u, v] = ends;
@@ -278,6 +281,7 @@ export function executeActions(
   const api = adapter.api;
   const before = adapter.snapshot();
   const initialNames = new Set(api.getAllObjectNames());
+  const solidEdges = new Set<string>();
   const roles = new Map<string, boolean>(), visibility = new Map<string, boolean>();
   const need = (name: string, types?: string[]) => {
     if (!api.exists(name)) throw new Error(`Không tìm thấy đối tượng ${name}.`);
@@ -294,6 +298,10 @@ export function executeActions(
       if (a.type === "history")
         throw new Error("Thao tác lịch sử phải được thực hiện qua bộ điều khiển tài liệu.");
       const prior = new Set(api.getAllObjectNames());
+      if (a.type === "space_mode") setSpaceMode(api, a.enabled);
+      if (a.type === "solid") {
+        const solid = createSolid(api, a); solid.edges.forEach(name => solidEdges.add(name));
+      }
       if (a.type === "view") {
         adapter.setCoordinateAxes(a.axes);
         if (a.grid !== undefined) api.setGridVisible(a.grid);
@@ -465,6 +473,23 @@ export function executeActions(
       }
       if (a.type === "style") {
         need(a.target);
+        const solid = solidRecords(api).find(s => s.name === a.target);
+        if (solid) {
+          if (a.lineStyle !== undefined) throw new Error("Nét cạnh khối được tự tính. Bật/tắt chế độ không gian để đổi cách hiển thị cạnh khuất.");
+          if (a.color) adapter.color(a.target, a.color);
+          for (const name of [...solid.edges, ...solid.faces]) { if (a.color) adapter.color(name, a.color); }
+          if (a.opacity !== undefined) for (const name of solid.faces) api.setFilling(name, a.opacity);
+          if (a.thickness) for (const name of solid.edges) api.setLineThickness(name, a.thickness);
+          if (a.visible !== undefined) setSolidVisible(api, solid, a.visible);
+          if (a.label) for (const name of solid.vertices) applyObjectLabel(api, name, a.label === "hidden" ? "hidden" : "name");
+          continue;
+        }
+        if (a.lineStyle !== undefined) {
+          const owner = solidMember(api, a.target);
+          if (owner && (owner.edges.includes(a.target) || owner.faces.includes(a.target))) throw new Error("Cạnh này thuộc hình không gian; nét khuất được tự tính theo chế độ không gian.");
+          if (!supportsStroke(api.getObjectType(a.target))) throw new Error("Đối tượng không hỗ trợ kiểu nét.");
+          api.setLineStyle(a.target, a.lineStyle);
+        }
         if (a.opacity !== undefined) {
           if (!supportsFill(api.getObjectType(a.target))) throw new Error("Chỉ tô màu cho đối tượng có miền diện tích: đa giác, hình tròn, hình quạt hoặc hình viên phân.");
           api.setFilling(a.target, a.opacity);
@@ -477,7 +502,11 @@ export function executeActions(
             throw new Error(
               "Đối tượng này không hỗ trợ độ dày nét. Bạn có thể đổi màu hoặc hiển thị.",
             );
-          api.setLineThickness(a.target, a.thickness);
+          const owner = solidMember(api, a.target), faceIndex = owner?.faces.indexOf(a.target) ?? -1;
+          if (owner && faceIndex >= 0) {
+            const topology = solidTopology(owner.kind), face = topology.faces[faceIndex];
+            for (let i = 0; i < topology.edges.length; i++) if (topology.edges[i].every(vertex => face.includes(vertex))) api.setLineThickness(owner.edges[i], a.thickness);
+          } else api.setLineThickness(a.target, a.thickness);
         }
       }
       if (a.type === "move") {
@@ -496,14 +525,15 @@ export function executeActions(
       }
       if (a.type === "delete") {
         need(a.target);
-        api.deleteObject(a.target);
+        const solid = solidRecords(api).find(s => s.name === a.target);
+        if (solid) deleteSolid(api, solid); else api.deleteObject(a.target);
       }
       for (const name of api.getAllObjectNames()) {
         if (!api.isDefined(name))
           throw new Error(
             `Phép dựng làm ${name} không xác định. Kiểm tra các điểm trùng nhau, thẳng hàng hoặc điều kiện mâu thuẫn.`,
           );
-        if (!prior.has(name)) {
+        if (!prior.has(name) && a.type !== "solid") {
           if ((a.type === "point" || a.type === "construct") && a.auxiliary !== undefined && !roles.has(name)) roles.set(name, a.auxiliary);
           const type = api.getObjectType(name);
           if (type === "segment") applyObjectLabel(api, name, "name");
@@ -526,11 +556,12 @@ export function executeActions(
       }
       if (a.type === "style" && a.visible !== undefined) visibility.set(a.target, a.visible);
     }
-    synthesizePolygonsFromSegments(adapter, initialNames, roles);
+    synthesizePolygonsFromSegments(adapter, initialNames, roles, solidEdges);
     for (const [name, auxiliary] of roles) if (api.exists(name)) {
       api.setAuxiliary(name, auxiliary);
       if (auxiliary && visibility.get(name) !== true) api.setVisible(name, false);
     }
+    refreshSolidEdges(api);
     adapter.ensureBisectorMarks();
     adapter.formatSegmentLabels();
     adapter.formatPointLabels();

@@ -1,3 +1,4 @@
+import { solidMember, solidEdgeLength } from "./SolidProjection";
 import { geometryNames } from "../../shared/geometryNames";
 import type { GGBApi } from "../types/geogebra";
 import type { GeometryObject } from "../../shared/actions";
@@ -63,9 +64,12 @@ export function formatSegmentLabels(
     if (api.getObjectType(name) !== "segment") continue;
     const display = segmentDisplayName(api, name);
     if (!display) continue;
+    const solid = solidMember(api, name);
+    const physical = solid ? solidEdgeLength(solid, name) : undefined;
     const mode = api.getLabelStyle(name);
     const previous = api.getCaption(name, false);
-    const caption =
+    const caption = physical !== undefined && (mode === 1 || mode === 2 || previous.includes(" = ") || previous === "%v")
+      ? `${display} = ${Number(physical.toFixed(2))}` :
       mode === 2 || previous === "%v"
         ? "%v"
         : mode === 1 || previous.endsWith(" = %v")
@@ -89,8 +93,11 @@ export function applyObjectLabel(
   const type = api.getObjectType(name);
   if (type === "segment") {
     const display = segmentDisplayName(api, name) ?? name;
+    const solid = solidMember(api, name);
+    const physical = solid ? solidEdgeLength(solid, name) : undefined;
     api.setCaption(
       name,
+      physical !== undefined && ["value", "name_value"].includes(label) ? `${display} = ${Number(physical.toFixed(2))}` :
       label === "value"
         ? "%v"
         : label === "name_value"
@@ -137,7 +144,7 @@ export function hasMeasurementIntent(api: GGBApi, name: string) {
   return type === "text"
     ? isMeasurementObject(api, name)
     : type === "segment"
-      ? api.getCaption(name, false).includes("%v") ||
+      ? api.getCaption(name, false).includes("%v") || (api.getCaption(name, false).includes(" = ") && !!solidMember(api, name)) ||
         [1, 2].includes(api.getLabelStyle(name))
       : type === "angle" && [1, 2].includes(api.getLabelStyle(name));
 }
@@ -148,7 +155,7 @@ export function measurementVisible(api: GGBApi, name: string) {
   return (
     api.getVisible(name) &&
     /<show[^>]*label="true"/.test(api.getXML(name)) &&
-    ((type === "segment" && api.getCaption(name, false).includes("%v")) ||
+    ((type === "segment" && (api.getCaption(name, false).includes("%v") || (api.getCaption(name, false).includes(" = ") && !!solidMember(api, name)))) ||
       (type === "angle" && [1, 2].includes(api.getLabelStyle(name))))
   );
 }

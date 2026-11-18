@@ -13,7 +13,7 @@ type Shape = {
   name: string;
   points: ScreenPoint[];
   bounds: ScreenBounds;
-  kind: "point" | "path" | "polygon" | "circle" | "angle" | "text";
+  kind: "point" | "path" | "polygon" | "circle" | "angle" | "text" | "group";
   center?: ScreenPoint;
   rx?: number;
   ry?: number;
@@ -116,7 +116,10 @@ export function screenShapes(
     const pointRefs = refs.filter((n) => api.getObjectType(n) === "point");
     let points: ScreenPoint[] = [];
     let kind: Shape["kind"] = "path";
-    if (o.type === "point") {
+    if (o.solid) {
+      points = o.solid.vertices.map(point);
+      kind = "group";
+    } else if (o.type === "point") {
       points = [point(o.name)];
       kind = "point";
     } else if (o.type === "text") {
@@ -163,6 +166,7 @@ export function screenShapes(
     } else if (["segment", "vector"].includes(o.type) && pointRefs.length >= 2)
       points = pointRefs.slice(0, 2).map(point);
     else if (isPolygonType(o.type)) {
+      if ((o.opacity ?? 0) === 0 && (o.thickness ?? 0) === 0) continue;
       points = pointRefs.map(point);
       for (const command of doc.querySelectorAll("construction > command")) {
         const output = command.querySelector("output");
@@ -315,7 +319,7 @@ export function hitObject(shapes: Shape[], p: ScreenPoint) {
     }
   }
   for (const s of [...shapes].reverse()) {
-    if (["point", "text", "angle"].includes(s.kind)) continue;
+    if (["point", "text", "angle", "group"].includes(s.kind)) continue;
     if (
       s.kind === "circle" &&
       s.center &&

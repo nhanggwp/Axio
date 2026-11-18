@@ -1,3 +1,5 @@
+import { refreshSolidEdges, solidRecords, solidHiddenEdges, solidDescription, solidEdgeLength, isSpaceModeObject } from "./SolidProjection";
+import { solidNames } from "../../shared/solids";
 import { fillingFromXML } from "./GeometryState";
 import { ensureBisectorMarks } from "./bisectorMarks";
 import { contentBounds, svgCanvas, whiteSVG } from "./exportImage";
@@ -34,6 +36,7 @@ export function loadGeoGebra() {
 }
 export class GeoGebraAdapter {
   constructor(public readonly api: GGBApi) {}
+  ensureSolidEdges() { refreshSolidEdges(this.api); }
   private markingBisectors = false;
   get isMarkingBisectors() { return this.markingBisectors; }
   ensureBisectorMarks() {
@@ -46,7 +49,9 @@ export class GeoGebraAdapter {
       throw new Error("Không thể dựng hình: " + command);
   }
   objects(): GeometryObject[] {
-    return this.api.getAllObjectNames().map((name) => ({
+    const solids = new Map(solidRecords(this.api).map(solid => [solid.name, solid]));
+    const edges = new Map([...solids.values()].flatMap(solid => solid.edges.map(name => [name, solid] as const)));
+    return this.api.getAllObjectNames().filter(name => !isSpaceModeObject(this.api, name)).map((name) => { const solid = solids.get(name); return ({
       name,
       displayName: segmentDisplayName(this.api, name),
       type: this.api.getObjectType(name),
@@ -67,7 +72,10 @@ export class GeoGebraAdapter {
       ...(this.api.getObjectType(name) === "point"
         ? { x: this.api.getXcoord(name), y: this.api.getYcoord(name) }
         : {}),
-    }));
+      ...(edges.has(name) ? { value: `${Number(solidEdgeLength(edges.get(name)!, name)!.toFixed(2))} (độ dài thật)` } : {}),
+      ...(solid ? { type: "solid", displayName: solidNames[solid.kind], value: solidDescription(solid), visible: solid.visible, auxiliary: false, opacity: fillingFromXML(this.api.getXML(solid.faces[0])), thickness: this.api.getLineThickness(solid.edges[0]), labelVisible: solid.vertices.some(vertex => /<show[^>]*label="true"/.test(this.api.getXML(vertex))),
+        solid: { kind: solid.kind, vertices: solid.vertices, edges: solid.edges, faces: solid.faces, dimensions: solid.dimensions, hiddenEdges: solidHiddenEdges(this.api, solid) } } : {}),
+    }); });
   }
   color(name: string, color: string) {
     this.api.setColor(
@@ -215,6 +223,7 @@ export class GeoGebraAdapter {
     );
   }
   async renderExport<T>(options: { center?: boolean; grid?: boolean; axes?: boolean }, render: () => T | Promise<T>): Promise<T> {
+    this.ensureSolidEdges();
     const view = JSON.parse(this.api.getViewProperties(1));
     const before = this.viewState();
     const rawOptions = this.api.getGraphicsOptions(1);

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { solidKinds } from "./solids";
 export const AGENT_TIMEOUT_MS = 120_000;
 export const labelSchema = z.string().max(24).regex(/^[A-Za-z][A-Za-z0-9_]*'{0,3}$/);
 // Existing native names (e.g. α, Văn bảnAB) are passed only to object APIs.
@@ -18,6 +19,16 @@ export const geometryCheckSchema = z.discriminatedUnion("kind", [
 export type GeometryCheck = z.infer<typeof geometryCheckSchema>;
 const n = z.number().finite().min(-100000).max(100000);
 export const actionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("space_mode"), enabled: z.boolean() }).strict(),
+  z.object({
+    type: z.literal("solid"), kind: z.enum(solidKinds), label: labelSchema,
+    vertices: z.array(labelSchema).min(6).max(8).optional(),
+    origin: z.object({ x: n, y: n }).strict().optional(),
+    dimensions: z.object({ width: z.number().finite().positive().max(10000), depth: z.number().finite().positive().max(10000), height: z.number().finite().positive().max(10000) }).strict().optional(),
+    scale: z.number().finite().min(.001).max(1000).optional(),
+    view: z.enum(["right", "left"]).optional(),
+    showDimensions: z.boolean().optional(),
+  }).strict(),
   z
     .object({ type: z.literal("point"), label: labelSchema, x: n, y: n, auxiliary: z.boolean().optional() })
     .strict(),
@@ -87,6 +98,7 @@ export const actionSchema = z.discriminatedUnion("type", [
       visible: z.boolean().optional(),
       thickness: z.number().int().min(1).max(13).optional(),
       opacity: z.number().finite().min(0).max(1).optional(),
+      lineStyle: z.number().int().min(0).max(4).optional(),
     })
     .strict(),
   z
@@ -184,6 +196,7 @@ export const objectSchema = z.object({
   thickness: z.number().optional(),
   lineStyle: z.number().optional(),
   vertices: z.array(z.string().max(64)).min(3).max(100).optional(),
+  solid: z.object({ kind: z.enum(solidKinds), vertices: z.array(z.string()).max(8), edges: z.array(z.string()).max(12), faces: z.array(z.string()).max(6), hiddenEdges: z.array(z.string()).max(12), dimensions: z.object({ width: z.number(), depth: z.number(), height: z.number() }) }).optional(),
   x: z.number().nullable().optional(),
   y: z.number().nullable().optional(),
 });
@@ -197,7 +210,7 @@ export const requestSchema = z
     validation_feedback: z.object({ message: z.string().min(1).max(4000), previous: replySchema }).strict().optional(),
     objects: z.array(objectSchema).max(400),
     preview_objects: z.array(objectSchema).max(400).optional(),
-    view: z.object({axes:z.boolean(),grid:z.boolean()}).strict().optional(),
+    view: z.object({axes:z.boolean(),grid:z.boolean(),spaceMode:z.boolean().optional()}).strict().optional(),
     history: z.object({ canUndo: z.boolean(), canRedo: z.boolean() }).strict().optional(),
     conversation: z
       .array(conversationEntrySchema)
