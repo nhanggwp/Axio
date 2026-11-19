@@ -31,11 +31,11 @@ export function createGate(config) {
  }
  function cookie(value,age) {return `${cookieName}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${age}${secureCookie?'; Secure':''}`;}
  const server=http.createServer(async(req,res)=>{
-  res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','no-referrer');
+  res.setHeader('Cache-Control','no-store');res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');
   const nonce=randomBytes(18).toString('base64');res.setHeader('Content-Security-Policy',`default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; connect-src 'self'; img-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'`);
   const wantsJSON=(req.headers.accept||'').includes('application/json');
   function html(status,error='',next='/',unlocked=false){res.writeHead(status,{'Content-Type':'text/html; charset=utf-8'});res.end(req.method==='HEAD'?'':page({next,nonce,error,unlocked}));}
-  function failure(status,error,next='/'){if(wantsJSON){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify({error}));}else html(status,error,next);}
+  function failure(status,error,next='/',json=wantsJSON){if(json){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8'});res.end(JSON.stringify({error}));}else html(status,error,next);}
   function redirect(target){res.writeHead(303,{Location:target});res.end();}
   try {
    const url=new URL(req.url,origin);
@@ -44,7 +44,7 @@ export function createGate(config) {
    if(url.pathname==='/denied'){
     const next=safeNext(req.headers['x-axio-original-uri']);
     if(['GET','HEAD'].includes(req.headers['x-axio-original-method']||req.method)&&(req.headers.accept||'').includes('text/html')&&!next.startsWith('/api/'))redirect('/access?'+new URLSearchParams({next}));
-    else failure(401,'Vui lòng mở khóa Axio để tiếp tục.');return;
+    else failure(401,'Vui lòng mở khóa Axio để tiếp tục.','/',true);return;
    }
    if(url.pathname==='/access'&&['GET','HEAD'].includes(req.method)){html(200,'',safeNext(url.searchParams.get('next')),valid(req));return;}
    if(['/access/unlock','/access/lock'].includes(url.pathname)&&req.method==='POST') {

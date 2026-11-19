@@ -14,7 +14,7 @@ async function fixture(t,overrides={}) {
 }
 test('unlock page is public, responsive, contains no password and uses fresh CSP nonces',async t=>{
  const {request}=await fixture(t),a=await request('/access?next=/huong-dan/'),html=await a.text(),b=await request('/access');
- assert.equal(a.status,200);assert.match(html,/Chào mừng/);assert.match(html,/autocomplete="current-password"/);assert.ok(!html.includes(password));assert.match(a.headers.get('cache-control'),/no-store/);assert.match(a.headers.get('content-security-policy'),/frame-ancestors 'none'/);assert.notEqual(a.headers.get('content-security-policy'),b.headers.get('content-security-policy'));assert.equal(a.headers.get('www-authenticate'),null);
+ assert.equal(a.status,200);assert.match(html,/Chào mừng/);assert.match(html,/autocomplete="current-password"/);assert.ok(!html.includes(password));assert.match(a.headers.get('cache-control'),/no-store/);assert.equal(a.headers.get('referrer-policy'),'same-origin');assert.match(a.headers.get('content-security-policy'),/frame-ancestors 'none'/);assert.notEqual(a.headers.get('content-security-policy'),b.headers.get('content-security-policy'));assert.equal(a.headers.get('www-authenticate'),null);
 });
 test('wrong password stays locked; valid password issues a signed secure cookie',async t=>{
  const {request,unlock}=await fixture(t);assert.equal((await request('/check')).status,401);
@@ -46,7 +46,7 @@ test('browser form fallback redirects and lock clears its cookie',async t=>{
 });
 test('denied navigation redirects with an encoded return URL, while API calls receive 401',async t=>{
  const {request}=await fixture(t);const page=await request('/denied',{headers:{Accept:'text/html','X-Axio-Original-Uri':'/huong-dan/?x=1&y=2','X-Axio-Original-Method':'GET'}});assert.equal(page.status,303);assert.equal(new URL(page.headers.get('location'),'https://axio.example').searchParams.get('next'),'/huong-dan/?x=1&y=2');
- const api=await request('/denied',{headers:{Accept:'application/json','X-Axio-Original-Uri':'/api/status'}});assert.equal(api.status,401);assert.equal(api.headers.get('www-authenticate'),null);
+ const api=await request('/denied',{headers:{Accept:'application/json','X-Axio-Original-Uri':'/api/status'}});assert.equal(api.status,401);assert.equal(api.headers.get('www-authenticate'),null);const plain=await request('/denied',{headers:{'X-Axio-Original-Uri':'/api/status'}});assert.match(plain.headers.get('content-type'),/application\/json/);
 });
 test('password rotation invalidates existing cookies',async t=>{
  const one=await fixture(t),good=await one.unlock(),cookie=good.headers.get('set-cookie').split(';')[0];const two=await fixture(t,{passwordHash:await hashPassword('changed')});assert.equal((await two.request('/check',{headers:{Cookie:cookie}})).status,401);
