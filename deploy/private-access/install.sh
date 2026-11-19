@@ -21,7 +21,8 @@ backup="/opt/axio/access-backups/cookie-$version"
 install -d -m 700 "$backup"
 cp -p /etc/nginx/snippets/axio-private-access.conf "$backup/nginx-private.conf"
 cp -p /etc/nginx/sites-available/axio.percytony.com.conf "$backup/nginx-site.conf"
-previous=$(readlink -f /var/lib/axio-access/current || true)
+previous=""
+if [ -e /var/lib/axio-access/current ]; then previous=$(readlink -f /var/lib/axio-access/current); fi
 if [ -f /etc/systemd/system/axio-access.service ]; then cp -p /etc/systemd/system/axio-access.service "$backup/axio-access.service"; fi
 rollback() {
  cp -p "$backup/nginx-private.conf" /etc/nginx/snippets/axio-private-access.conf
@@ -31,7 +32,10 @@ rollback() {
   ln -sfn "$previous" /var/lib/axio-access/current
   if [ -f "$backup/axio-access.service" ]; then cp -p "$backup/axio-access.service" /etc/systemd/system/axio-access.service; fi
   systemctl daemon-reload; systemctl restart axio-access
- else systemctl stop axio-access || true; fi
+ else
+  systemctl disable --now axio-access || true
+  rm -f /var/lib/axio-access/current
+ fi
  echo 'Private access rollout failed; previous Nginx policy restored.' >&2
 }
 trap rollback ERR

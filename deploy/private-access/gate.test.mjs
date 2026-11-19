@@ -51,3 +51,11 @@ test('denied navigation redirects with an encoded return URL, while API calls re
 test('password rotation invalidates existing cookies',async t=>{
  const one=await fixture(t),good=await one.unlock(),cookie=good.headers.get('set-cookie').split(';')[0];const two=await fixture(t,{passwordHash:await hashPassword('changed')});assert.equal((await two.request('/check',{headers:{Cookie:cookie}})).status,401);
 });
+test('service starts when its entry point is reached through a release symlink',async t=>{
+ const {mkdtemp,symlink,writeFile,rm}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');const {fileURLToPath}=await import('node:url');const {spawn}=await import('node:child_process');const {createServer}=await import('node:net');
+ const directory=await mkdtemp(join(tmpdir(),'axio-access-')),probe=createServer();await new Promise(r=>probe.listen(0,'127.0.0.1',r));const port=probe.address().port;await new Promise(r=>probe.close(r));
+ const entry=join(directory,'gate.mjs'),config=join(directory,'config.json');await symlink(fileURLToPath(new URL('./gate.mjs',import.meta.url)),entry);await writeFile(config,JSON.stringify({origin:'https://axio.example',passwordHash,sessionSecret,port}),{mode:0o600});
+ const child=spawn(process.execPath,[entry],{env:{...process.env,AXIO_ACCESS_CONFIG:config},stdio:['ignore','ignore','pipe']});let error='';child.stderr.on('data',chunk=>error+=chunk);
+ t.after(async()=>{child.kill();await new Promise(r=>{if(child.exitCode!==null)return r();child.once('exit',r);});await rm(directory,{recursive:true,force:true});});
+ let ready=false;for(let i=0;i<60;i++){try{ready=(await fetch('http://127.0.0.1:'+port+'/health')).status===204;}catch{}if(ready)break;if(child.exitCode!==null)break;await new Promise(r=>setTimeout(r,50));}assert.equal(ready,true,error||'Service did not start through its symlink');
+});

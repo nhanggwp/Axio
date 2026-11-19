@@ -1,7 +1,7 @@
 import http from 'node:http';
 import {createHmac,randomBytes,scrypt as scryptCallback,timingSafeEqual,createHash} from 'node:crypto';
 import {promisify} from 'node:util';
-import {readFileSync} from 'node:fs';
+import {readFileSync,realpathSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 import {page} from './page.mjs';
 const scrypt=promisify(scryptCallback),COOKIE='__Host-axio-access',MAX_AGE=7*24*60*60;
@@ -73,7 +73,7 @@ export function createGate(config) {
  server.requestTimeout=15000;server.headersTimeout=10000;server.maxHeadersCount=60;
  return server;
 }
-if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
+if(process.argv[1]&&import.meta.url===pathToFileURL(realpathSync(process.argv[1])).href){
  const config=JSON.parse(readFileSync(process.env.AXIO_ACCESS_CONFIG||'/etc/axio-access/config.json','utf8'));
  const server=createGate(config);server.listen(config.port||3018,'127.0.0.1',()=>console.log('Axio private access ready on loopback'));
  for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>server.close(()=>process.exit(0)));
