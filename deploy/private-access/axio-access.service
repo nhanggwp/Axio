@@ -1,0 +1,28 @@
+[Unit]
+Description=Axio private access page and cookie validation
+After=network.target
+
+[Service]
+Type=simple
+User=axio-access
+Group=axio-access
+WorkingDirectory=/var/lib/axio-access/current
+Environment=AXIO_ACCESS_CONFIG=/etc/axio-access/config.json
+ExecStart=/usr/bin/node /var/lib/axio-access/current/gate.mjs
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=0077
+MemoryMax=192M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

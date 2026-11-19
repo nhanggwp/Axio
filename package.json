@@ -13,7 +13,8 @@
     "db:migrate": "tsx server/db/migrate.ts",
     "lint": "eslint src server shared tests scripts",
     "db:schema": "tsx server/db/schema.ts",
-    "mail:dev": "tsx scripts/dev-mail.ts"
+    "mail:dev": "tsx scripts/dev-mail.ts",
+    "test:access": "node --test deploy/private-access/gate.test.mjs"
   },
   "dependencies": {
     "@fontsource/inter": "5.2.8",
