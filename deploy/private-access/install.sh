@@ -9,6 +9,7 @@ version=${1:?Usage: install.sh RELEASE_ID}
 [ -f /etc/axio-access/config.json ]
 /usr/bin/node --check "$source_dir/gate.mjs"
 nginx -V 2>&1 | grep -q -- --with-http_auth_request_module
+nginx -V 2>&1 | grep -q -- --with-http_sub_module
 getent passwd axio-access >/dev/null || useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin axio-access
 install -d -m 750 -o root -g axio-access /etc/axio-access
 chown root:axio-access /etc/axio-access/config.json
@@ -21,12 +22,14 @@ backup="/opt/axio/access-backups/cookie-$version"
 install -d -m 700 "$backup"
 cp -p /etc/nginx/snippets/axio-private-access.conf "$backup/nginx-private.conf"
 cp -p /etc/nginx/sites-available/axio.percytony.com.conf "$backup/nginx-site.conf"
+if [ -f /etc/nginx/snippets/axio-visit-guard.conf ]; then cp -p /etc/nginx/snippets/axio-visit-guard.conf "$backup/visit-guard.conf"; fi
 previous=""
 if [ -e /var/lib/axio-access/current ]; then previous=$(readlink -f /var/lib/axio-access/current); fi
 if [ -f /etc/systemd/system/axio-access.service ]; then cp -p /etc/systemd/system/axio-access.service "$backup/axio-access.service"; fi
 rollback() {
  cp -p "$backup/nginx-private.conf" /etc/nginx/snippets/axio-private-access.conf
  cp -p "$backup/nginx-site.conf" /etc/nginx/sites-available/axio.percytony.com.conf
+ if [ -f "$backup/visit-guard.conf" ]; then cp -p "$backup/visit-guard.conf" /etc/nginx/snippets/axio-visit-guard.conf; else rm -f /etc/nginx/snippets/axio-visit-guard.conf; fi
  nginx -t && systemctl reload nginx
  if [ -n "$previous" ]; then
   ln -sfn "$previous" /var/lib/axio-access/current
@@ -50,6 +53,18 @@ for attempt in {1..20}; do
 done
 curl -fsS http://127.0.0.1:3018/health >/dev/null
 install -m 644 "$source_dir/nginx.conf" /etc/nginx/snippets/axio-private-access.conf
+install -m 644 "$source_dir/visit-guard.conf" /etc/nginx/snippets/axio-visit-guard.conf
+python3 - <<'PY_SITE'
+from pathlib import Path
+p=Path('/etc/nginx/sites-available/axio.percytony.com.conf')
+s=p.read_text();start=s.index('    listen 443 ssl;');prefix,s=s[:start],s[start:]
+for location in ['    location / {', '    location ^~ /huong-dan/ {']:
+ marker=location+'\n'
+ assert s.count(marker)==1
+ include='        include /etc/nginx/snippets/axio-visit-guard.conf;\n'
+ if marker+include not in s:s=s.replace(marker,marker+include)
+p.write_text(prefix+s)
+PY_SITE
 nginx -t
 systemctl reload nginx
 sleep 1

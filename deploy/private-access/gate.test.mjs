@@ -14,13 +14,13 @@ async function fixture(t,overrides={}) {
 }
 test('unlock page is public, responsive, contains no password and uses fresh CSP nonces',async t=>{
  const {request}=await fixture(t),a=await request('/access?next=/huong-dan/'),html=await a.text(),b=await request('/access');
- assert.equal(a.status,200);assert.match(html,/Chào mừng/);assert.match(html,/autocomplete="current-password"/);assert.ok(!html.includes(password));assert.match(a.headers.get('cache-control'),/no-store/);assert.equal(a.headers.get('referrer-policy'),'same-origin');assert.match(a.headers.get('content-security-policy'),/frame-ancestors 'none'/);assert.notEqual(a.headers.get('content-security-policy'),b.headers.get('content-security-policy'));assert.equal(a.headers.get('www-authenticate'),null);
+ assert.equal(a.status,200);assert.match(html,/Chào mừng/);assert.match(html,/autocomplete="off"/);assert.ok(!html.includes(password));assert.match(html,/<form id="unlock"/);assert.ok(!html.includes('localStorage'));assert.ok(!html.includes('sessionStorage'));assert.match(a.headers.get('cache-control'),/no-store/);assert.equal(a.headers.get('referrer-policy'),'same-origin');assert.match(a.headers.get('content-security-policy'),/frame-ancestors 'none'/);assert.notEqual(a.headers.get('content-security-policy'),b.headers.get('content-security-policy'));assert.equal(a.headers.get('www-authenticate'),null);
 });
 test('wrong password stays locked; valid password issues a signed secure cookie',async t=>{
  const {request,unlock}=await fixture(t);assert.equal((await request('/check')).status,401);
  const bad=await unlock('wrong');assert.equal(bad.status,401);assert.equal(bad.headers.get('set-cookie'),null);
  const good=await unlock(password,'/huong-dan/?lesson=13');assert.equal(good.status,200);assert.deepEqual(await good.json(),{redirect:'/huong-dan/?lesson=13'});
- const cookie=good.headers.get('set-cookie');for(const flag of ['__Host-axio-access=','HttpOnly','Secure','SameSite=Lax','Path=/'])assert.ok(cookie.includes(flag));
+ const cookie=good.headers.get('set-cookie');for(const flag of ['__Host-axio-access=','HttpOnly','Secure','SameSite=Lax','Path=/'])assert.ok(cookie.includes(flag));assert.ok(!cookie.includes('Max-Age='));assert.ok(!cookie.includes('Expires='));
  assert.equal((await request('/check',{headers:{Cookie:cookie.split(';')[0]}})).status,204);
  const [name,value]=cookie.split(';')[0].split('=');assert.equal((await request('/check',{headers:{Cookie:name+'='+value.slice(0,-3)+'xyz'}})).status,401);
  assert.equal((await request('/check',{headers:{Cookie:name+'=unsigned.fake'}})).status,401);
@@ -58,4 +58,37 @@ test('service starts when its entry point is reached through a release symlink',
  const child=spawn(process.execPath,[entry],{env:{...process.env,AXIO_ACCESS_CONFIG:config},stdio:['ignore','ignore','pipe']});let error='';child.stderr.on('data',chunk=>error+=chunk);
  t.after(async()=>{child.kill();await new Promise(r=>{if(child.exitCode!==null)return r();child.once('exit',r);});await rm(directory,{recursive:true,force:true});});
  let ready=false;for(let i=0;i<60;i++){try{ready=(await fetch('http://127.0.0.1:'+port+'/health')).status===204;}catch{}if(ready)break;if(child.exitCode!==null)break;await new Promise(r=>setTimeout(r,50));}assert.equal(ready,true,error||'Service did not start through its symlink');
+});
+function cookies(response){return (response.headers.getSetCookie?.()||response.headers.get('set-cookie').split(/,\s*(?=__Host-)/)).map(s=>s.split(';')[0]).join('; ');}
+function navigation(cookie,id='document-1',uri='/huong-dan/?lesson=13'){
+ return {headers:{Cookie:cookie,'X-Axio-Destination':'document','X-Axio-Mode':'navigate','X-Axio-Accept':'text/html','X-Axio-Request-Id':id,'X-Axio-Original-Uri':uri}};
+}
+test('each reload or new tab requires a fresh password, while assets and APIs keep working',async t=>{
+ const {request,unlock}=await fixture(t),good=await unlock(password,'/huong-dan/?lesson=13#13'),cookie=cookies(good);
+ assert.equal((await request('/check',navigation(cookie))).status,204);
+ // Nginx's internal directory-index check belongs to the same navigation.
+ assert.equal((await request('/check',navigation(cookie))).status,204);
+ assert.equal((await request('/check',navigation(cookie,'reload-2'))).status,401);
+ assert.equal((await request('/check',navigation(cookie,'new-tab-3'))).status,401);
+ assert.equal((await request('/check',{headers:{Cookie:cookie,'X-Axio-Destination':'script'}})).status,204);
+ assert.equal((await request('/check',{headers:{Cookie:cookie,'X-Axio-Destination':'video'}})).status,204);
+ assert.equal((await request('/check',{headers:{Cookie:cookie,'X-Axio-Accept':'application/json'}})).status,204);
+ const form=await request('/access',{headers:{Cookie:cookie}});assert.match(await form.text(),/<form id="unlock"/);
+});
+test('navigation grant is bound to the unlocked target and signed session',async t=>{
+ const {request,unlock}=await fixture(t),a=await unlock(password,'/huong-dan/?lesson=13'),cookie=cookies(a);
+ assert.equal((await request('/check',navigation(cookie,'wrong-page','/'))).status,401);
+ assert.equal((await request('/check',navigation(cookie))).status,204);
+ const b=await unlock(password,'/huong-dan/?lesson=13'),second=cookies(b);
+ const mixed=second.split('; ')[0]+'; '+cookie.split('; ')[1];
+ assert.equal((await request('/check',navigation(mixed,'other-session'))).status,401);
+ assert.equal((await request('/check',navigation(second,'new-password-entry'))).status,204);
+});
+test('older persistent cookies are invalidated and do not bypass the new entry policy',async t=>{
+ const {request}=await fixture(t);const {createHash}=await import('node:crypto');const revision=createHash('sha256').update(passwordHash).digest('hex').slice(0,24);
+ const body=Buffer.from(JSON.stringify({v:1,exp:Date.now()+60000,revision})).toString('base64url'),signature=createHmac('sha256',Buffer.from(sessionSecret,'hex')).update(body).digest('base64url');
+ const cookie='__Host-axio-access='+body+'.'+signature;assert.equal((await request('/check',{headers:{Cookie:cookie}})).status,401);
+});
+test('returning from back-forward cache forces a new document navigation without browser storage',async t=>{
+ const {request}=await fixture(t),r=await request('/access/visit.js'),script=await r.text();assert.equal(r.status,200);assert.match(script,/pageshow/);assert.match(script,/persisted/);assert.match(script,/location.reload/);assert.doesNotMatch(script,/localStorage|sessionStorage/);
 });
